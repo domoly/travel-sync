@@ -10,11 +10,7 @@ import type { User } from 'firebase/auth';
 
 import type { Trip } from '../types';
 import { db, appId, doc, onSnapshot } from '../config/firebase';
-
-// TODO: These components will be extracted to separate files
-// import { ItineraryManager } from '../components/ItineraryManager';
-// import { ExpenseTracker } from '../components/ExpenseTracker';
-// import { AdminPanel } from '../components/AdminPanel';
+import { ItineraryManager } from '../components/ItineraryManager';
 
 interface TripViewProps {
   user: User;
@@ -22,17 +18,13 @@ interface TripViewProps {
   onBack: () => void;
 }
 
-// Placeholder components until they are extracted
-function ItineraryManager(_props: { tripId: string; trip: Trip }) {
-  return <div className="text-slate-400 text-center py-10">Itinerary Manager - To be implemented</div>;
-}
-
+// Placeholder components until they are implemented
 function ExpenseTracker(_props: { tripId: string; members: string[] }) {
-  return <div className="text-slate-400 text-center py-10">Expense Tracker - To be implemented</div>;
+  return <div className="text-slate-400 text-center py-10">Expense Tracker - Coming soon</div>;
 }
 
 function AdminPanel(_props: { tripId: string; trip: Trip }) {
-  return <div className="text-slate-400 text-center py-10">Admin Panel - To be implemented</div>;
+  return <div className="text-slate-400 text-center py-10">Admin Panel - Coming soon</div>;
 }
 
 export function TripView({ user: _user, tripId, onBack }: TripViewProps) {

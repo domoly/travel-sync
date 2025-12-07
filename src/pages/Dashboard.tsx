@@ -28,6 +28,8 @@ export function Dashboard({ user, onOpenTrip }: DashboardProps) {
   const [newTripStart, setNewTripStart] = useState('');
   const [newTripEnd, setNewTripEnd] = useState('');
   const [joinCodeInput, setJoinCodeInput] = useState('');
+  const [createError, setCreateError] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -51,10 +53,17 @@ export function Dashboard({ user, onOpenTrip }: DashboardProps) {
   }, [user]);
 
   const handleCreateTrip = async () => {
-    if (!newTripName) return;
+    setCreateError('');
+    
+    if (!newTripName.trim()) {
+      setCreateError('Please enter a trip name');
+      return;
+    }
+    
+    setIsCreating(true);
     try {
       const newTrip: Partial<Trip> = {
-        name: newTripName,
+        name: newTripName.trim(),
         startDate: newTripStart,
         endDate: newTripEnd,
         ownerId: user.uid,
@@ -66,8 +75,12 @@ export function Dashboard({ user, onOpenTrip }: DashboardProps) {
       setNewTripName('');
       setNewTripStart('');
       setNewTripEnd('');
+      setCreateError('');
     } catch (e) {
       console.error('Error creating trip', e);
+      setCreateError('Failed to create trip. Please check your connection and try again.');
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -223,11 +236,24 @@ export function Dashboard({ user, onOpenTrip }: DashboardProps) {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
             <h2 className="text-xl font-bold mb-4">Plan a New Trip</h2>
+            
+            {createError && (
+              <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm">
+                {createError}
+              </div>
+            )}
+            
             <input
-              className="w-full p-3 border border-slate-300 rounded-lg mb-3 focus:ring-2 focus:ring-indigo-500 outline-none"
+              className={`w-full p-3 border rounded-lg mb-3 focus:ring-2 focus:ring-indigo-500 outline-none ${
+                createError && !newTripName.trim() ? 'border-red-300 bg-red-50' : 'border-slate-300'
+              }`}
               placeholder="Trip Name (e.g., Summer in Italy)"
               value={newTripName}
-              onChange={(e) => setNewTripName(e.target.value)}
+              onChange={(e) => {
+                setNewTripName(e.target.value);
+                if (createError) setCreateError('');
+              }}
+              disabled={isCreating}
             />
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div>
@@ -237,6 +263,7 @@ export function Dashboard({ user, onOpenTrip }: DashboardProps) {
                   className="w-full p-2 border border-slate-300 rounded-lg"
                   value={newTripStart}
                   onChange={(e) => setNewTripStart(e.target.value)}
+                  disabled={isCreating}
                 />
               </div>
               <div>
@@ -246,21 +273,37 @@ export function Dashboard({ user, onOpenTrip }: DashboardProps) {
                   className="w-full p-2 border border-slate-300 rounded-lg"
                   value={newTripEnd}
                   onChange={(e) => setNewTripEnd(e.target.value)}
+                  disabled={isCreating}
                 />
               </div>
             </div>
             <div className="flex justify-end space-x-2">
               <button
-                onClick={() => setShowCreateModal(false)}
-                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setCreateError('');
+                }}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg disabled:opacity-50"
+                disabled={isCreating}
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateTrip}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                disabled={isCreating}
               >
-                Create Trip
+                {isCreating ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Creating...
+                  </>
+                ) : (
+                  'Create Trip'
+                )}
               </button>
             </div>
           </div>
