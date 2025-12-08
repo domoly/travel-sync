@@ -19,14 +19,17 @@ interface TripViewProps {
 }
 
 // Placeholder components until they are implemented
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function ExpenseTracker(_props: { tripId: string; members: string[] }) {
   return <div className="text-slate-400 text-center py-10">Expense Tracker - Coming soon</div>;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function AdminPanel(_props: { tripId: string; trip: Trip }) {
   return <div className="text-slate-400 text-center py-10">Admin Panel - Coming soon</div>;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function TripView({ user: _user, tripId, onBack }: TripViewProps) {
   const [activeTab, setActiveTab] = useState<'itinerary' | 'expenses' | 'admin'>('itinerary');
   const [trip, setTrip] = useState<Trip | null>(null);

@@ -11,6 +11,9 @@ import {
   onAuthStateChanged
 } from './config/firebase';
 
+// App version - update this with each deployment
+const APP_VERSION = '1.1.0';
+
 // Wrapper component for Dashboard with navigation
 function DashboardRoute({ user }: { user: User }) {
   const navigate = useNavigate();
@@ -89,6 +92,11 @@ function AppContent() {
         <Route path="/" element={<DashboardRoute user={user} />} />
         <Route path="/trip/:id" element={<TripViewRoute user={user} />} />
       </Routes>
+      
+      {/* Version indicator */}
+      <div className="fixed bottom-2 left-2 text-xs text-slate-400 bg-white/80 px-2 py-1 rounded shadow-sm">
+        v{APP_VERSION}
+      </div>
     </div>
   );
 }

@@ -13,6 +13,7 @@ export interface ItineraryItem {
   type: 'activity' | 'flight';
   category?: 'sightseeing' | 'food' | 'lodging' | 'nature' | 'shopping' | 'transport' | 'entertainment';
   day: string;
+  endDay?: string; // For multi-day items like lodging (check-out date)
   time: string;
   location: string;
   notes: string;

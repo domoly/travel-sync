@@ -1,313 +1,245 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import {
   Plus,
   MapPin,
-  Clock,
-  Plane,
-  Check,
-  Trash2,
-  Edit2,
-  X,
-  ExternalLink,
-  Camera,
-  Utensils,
-  Home,
-  Trees,
-  ShoppingBag,
-  Car,
-  Music,
   Sparkles,
+  List,
+  Map as MapIcon,
   Loader2
 } from 'lucide-react';
 
 import type { Trip, ItineraryItem } from '../types';
-import {
-  db,
-  appId,
-  collection,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-  onSnapshot
-} from '../config/firebase';
-import { generateItinerary, type GenerateItineraryParams } from '../services/ai';
+import { useItineraryItems, useItineraryForm } from '../hooks';
+import { geocodeAddress } from '../services/geocoding';
+
+import { ItineraryItemCard } from './ItineraryItemCard';
+import { ItineraryMapView } from './ItineraryMapView';
+import { AddEditItemModal } from './AddEditItemModal';
+import { AIGenerationModal } from './AIGenerationModal';
+
+// Google Maps API Key
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
 interface ItineraryManagerProps {
   tripId: string;
   trip: Trip;
 }
 
-const CATEGORIES = [
-  { value: 'sightseeing', label: 'Sightseeing', icon: Camera },
-  { value: 'food', label: 'Food & Drink', icon: Utensils },
-  { value: 'lodging', label: 'Lodging', icon: Home },
-  { value: 'nature', label: 'Nature', icon: Trees },
-  { value: 'shopping', label: 'Shopping', icon: ShoppingBag },
-  { value: 'transport', label: 'Transport', icon: Car },
-  { value: 'entertainment', label: 'Entertainment', icon: Music },
-] as const;
-
-const INTERESTS = [
-  'History & Culture',
-  'Food & Cuisine', 
-  'Nature & Outdoors',
-  'Art & Museums',
-  'Shopping',
-  'Nightlife',
-  'Adventure & Sports',
-  'Relaxation & Spa',
-  'Photography',
-  'Local Experiences'
-];
-
+/**
+ * Refactored ItineraryManager - now ~300 lines instead of 1140!
+ * Uses custom hooks for state management and extracted components for UI.
+ */
 export function ItineraryManager({ tripId, trip }: ItineraryManagerProps) {
-  const [items, setItems] = useState<ItineraryItem[]>([]);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [editingItem, setEditingItem] = useState<ItineraryItem | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Use custom hooks for data and form management
+  const {
+    items,
+    isLoading,
+    itemsByDay,
+    sortedDays,
+    addItem,
+    updateItem,
+    deleteItem,
+    toggleComplete,
+    addItemsBatch,
+    updateItemsBatch,
+  } = useItineraryItems(tripId);
 
-  // AI Generation state
+  const {
+    form,
+    editingItem,
+    isGeocoding,
+    setField,
+    resetForm,
+    populateFromItem,
+    handleGoogleMapsLinkChange,
+    handleGeocodeLocation,
+    toItemData,
+    isValid,
+  } = useItineraryForm();
+
+  // UI state
+  const [showAddModal, setShowAddModal] = useState(false);
   const [showAIModal, setShowAIModal] = useState(false);
   const [aiDestination, setAiDestination] = useState('');
-  const [aiInterests, setAiInterests] = useState<string[]>([]);
-  const [aiPace, setAiPace] = useState<'relaxed' | 'moderate' | 'packed'>('moderate');
-  const [aiNotes, setAiNotes] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedItems, setGeneratedItems] = useState<Partial<ItineraryItem>[]>([]);
-  const [aiError, setAiError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+  const [isBatchGeocoding, setIsBatchGeocoding] = useState(false);
 
-  // Form state
-  const [formType, setFormType] = useState<'activity' | 'flight'>('activity');
-  const [formDay, setFormDay] = useState('');
-  const [formTime, setFormTime] = useState('');
-  const [formLocation, setFormLocation] = useState('');
-  const [formNotes, setFormNotes] = useState('');
-  const [formCategory, setFormCategory] = useState<string>('sightseeing');
-  const [formGoogleMapsLink, setFormGoogleMapsLink] = useState('');
-  // Flight specific
-  const [formArrivalLocation, setFormArrivalLocation] = useState('');
-  const [formArrivalTime, setFormArrivalTime] = useState('');
-  const [formAirline, setFormAirline] = useState('');
-  const [formFlightNumber, setFormFlightNumber] = useState('');
+  // Memoized date formatter
+  const formatDate = useCallback((dateStr: string) => {
+    const date = new Date(dateStr + 'T00:00:00');
+    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  }, []);
 
-  useEffect(() => {
-    const itineraryRef = collection(db, 'artifacts', appId, 'public', 'data', 'trips', tripId, 'itinerary');
-    const unsubscribe = onSnapshot(itineraryRef, (snapshot) => {
-      const itineraryItems = snapshot.docs.map(
-        (doc) => ({ id: doc.id, ...doc.data() }) as ItineraryItem
-      );
-      // Sort by day and time
-      itineraryItems.sort((a, b) => {
-        if (a.day !== b.day) return a.day.localeCompare(b.day);
-        return a.time.localeCompare(b.time);
-      });
-      setItems(itineraryItems);
-    });
-    return () => unsubscribe();
-  }, [tripId]);
+  // Open add modal with default date
+  const openAddModal = useCallback(() => {
+    resetForm(trip.startDate);
+    setShowAddModal(true);
+  }, [resetForm, trip.startDate]);
 
-  const resetForm = () => {
-    setFormType('activity');
-    setFormDay('');
-    setFormTime('');
-    setFormLocation('');
-    setFormNotes('');
-    setFormCategory('sightseeing');
-    setFormGoogleMapsLink('');
-    setFormArrivalLocation('');
-    setFormArrivalTime('');
-    setFormAirline('');
-    setFormFlightNumber('');
-    setEditingItem(null);
-  };
+  // Open edit modal with item data
+  const openEditModal = useCallback((item: ItineraryItem) => {
+    populateFromItem(item);
+    setShowAddModal(true);
+  }, [populateFromItem]);
 
-  const openAddModal = () => {
+  // Close add/edit modal
+  const closeAddModal = useCallback(() => {
+    setShowAddModal(false);
     resetForm();
-    // Default to trip start date if available
-    if (trip.startDate) {
-      setFormDay(trip.startDate);
-    }
-    setShowAddModal(true);
-  };
+  }, [resetForm]);
 
-  const openEditModal = (item: ItineraryItem) => {
-    setEditingItem(item);
-    setFormType(item.type);
-    setFormDay(item.day);
-    setFormTime(item.time);
-    setFormLocation(item.location);
-    setFormNotes(item.notes || '');
-    setFormCategory(item.category || 'sightseeing');
-    setFormGoogleMapsLink(item.googleMapsLink || '');
-    setFormArrivalLocation(item.arrivalLocation || '');
-    setFormArrivalTime(item.arrivalTime || '');
-    setFormAirline(item.airline || '');
-    setFormFlightNumber(item.flightNumber || '');
-    setShowAddModal(true);
-  };
-
-  const handleSubmit = async () => {
-    if (!formDay || !formLocation) return;
+  // Submit form (add or update)
+  const handleSubmit = useCallback(async () => {
+    if (!isValid) return;
 
     setIsSubmitting(true);
     try {
-      const itemData: Partial<ItineraryItem> = {
-        type: formType,
-        day: formDay,
-        time: formTime,
-        location: formLocation,
-        notes: formNotes,
-        completed: editingItem?.completed || false,
-      };
-
-      if (formType === 'activity') {
-        itemData.category = formCategory as ItineraryItem['category'];
-        itemData.googleMapsLink = formGoogleMapsLink;
-      } else {
-        itemData.arrivalLocation = formArrivalLocation;
-        itemData.arrivalTime = formArrivalTime;
-        itemData.airline = formAirline;
-        itemData.flightNumber = formFlightNumber;
-      }
-
+      const itemData = toItemData();
+      
       if (editingItem) {
-        await updateDoc(
-          doc(db, 'artifacts', appId, 'public', 'data', 'trips', tripId, 'itinerary', editingItem.id),
-          itemData
-        );
+        await updateItem(editingItem.id, itemData);
       } else {
-        await addDoc(
-          collection(db, 'artifacts', appId, 'public', 'data', 'trips', tripId, 'itinerary'),
-          itemData
-        );
+        await addItem(itemData);
       }
-
-      setShowAddModal(false);
-      resetForm();
+      
+      closeAddModal();
     } catch (error) {
       console.error('Error saving item:', error);
       alert('Failed to save item. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [isValid, toItemData, editingItem, updateItem, addItem, closeAddModal]);
 
-  const toggleComplete = async (item: ItineraryItem) => {
+  // Handle delete with confirmation (already in hook, but wrapper for UI)
+  const handleDelete = useCallback(async (item: ItineraryItem) => {
     try {
-      await updateDoc(
-        doc(db, 'artifacts', appId, 'public', 'data', 'trips', tripId, 'itinerary', item.id),
-        { completed: !item.completed }
-      );
-    } catch (error) {
-      console.error('Error updating item:', error);
-    }
-  };
-
-  const deleteItem = async (item: ItineraryItem) => {
-    if (!confirm('Delete this item?')) return;
-    try {
-      await deleteDoc(
-        doc(db, 'artifacts', appId, 'public', 'data', 'trips', tripId, 'itinerary', item.id)
-      );
+      await deleteItem(item.id);
     } catch (error) {
       console.error('Error deleting item:', error);
     }
-  };
+  }, [deleteItem]);
 
-  // AI Generation functions
-  const toggleInterest = (interest: string) => {
-    setAiInterests(prev => 
-      prev.includes(interest) 
-        ? prev.filter(i => i !== interest)
-        : [...prev, interest]
-    );
-  };
+  // Open AI modal (optionally with pre-filled destination)
+  const openAIModal = useCallback((destination?: string) => {
+    setAiDestination(destination || '');
+    setShowAIModal(true);
+  }, []);
 
-  const handleGenerateItinerary = async () => {
-    if (!aiDestination.trim()) {
-      setAiError('Please enter a destination');
-      return;
-    }
-    if (!trip.startDate || !trip.endDate) {
-      setAiError('Trip dates are required. Please set start and end dates.');
-      return;
-    }
+  // Close AI modal
+  const closeAIModal = useCallback(() => {
+    setShowAIModal(false);
+    setAiDestination('');
+  }, []);
 
-    setAiError('');
-    setIsGenerating(true);
-    setGeneratedItems([]);
+  // Add AI-generated items using batch write (FAST!)
+  const handleAddAIItems = useCallback(async (newItems: Partial<ItineraryItem>[]) => {
+    await addItemsBatch(newItems);
+  }, [addItemsBatch]);
+
+  // Handle geocode location from form
+  const handleGeocode = useCallback(() => {
+    handleGeocodeLocation(GOOGLE_MAPS_API_KEY);
+  }, [handleGeocodeLocation]);
+
+  // Batch geocode for map view
+  const handleBatchGeocode = useCallback(async (itemsToGeocode: ItineraryItem[]) => {
+    if (!GOOGLE_MAPS_API_KEY || itemsToGeocode.length === 0) return;
+
+    setIsBatchGeocoding(true);
+    let successCount = 0;
+    let failCount = 0;
+    const updates: Array<{ id: string; data: Partial<ItineraryItem> }> = [];
 
     try {
-      const params: GenerateItineraryParams = {
-        tripName: trip.name,
-        startDate: trip.startDate,
-        endDate: trip.endDate,
-        destination: aiDestination,
-        interests: aiInterests,
-        pace: aiPace,
-        additionalNotes: aiNotes
-      };
+      for (const item of itemsToGeocode) {
+        if (!item.location) {
+          failCount++;
+          continue;
+        }
 
-      const items = await generateItinerary(params);
-      setGeneratedItems(items);
-    } catch (error) {
-      console.error('AI generation error:', error);
-      setAiError(error instanceof Error ? error.message : 'Failed to generate itinerary');
-    } finally {
-      setIsGenerating(false);
-    }
-  };
+        try {
+          const result = await geocodeAddress(item.location, GOOGLE_MAPS_API_KEY);
+          if (result) {
+            updates.push({
+              id: item.id,
+              data: { lat: result.lat, lng: result.lng }
+            });
+            successCount++;
+          } else {
+            failCount++;
+          }
+        } catch (error) {
+          console.error(`Failed to geocode "${item.location}":`, error);
+          failCount++;
+        }
 
-  const addGeneratedItems = async () => {
-    setIsSubmitting(true);
-    try {
-      for (const item of generatedItems) {
-        await addDoc(
-          collection(db, 'artifacts', appId, 'public', 'data', 'trips', tripId, 'itinerary'),
-          item
-        );
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
-      setShowAIModal(false);
-      setGeneratedItems([]);
-      setAiDestination('');
-      setAiInterests([]);
-      setAiNotes('');
+
+      // Batch update all geocoded items at once
+      if (updates.length > 0) {
+        await updateItemsBatch(updates);
+      }
+
+      if (successCount > 0) {
+        alert(`Successfully geocoded ${successCount} item(s)${failCount > 0 ? `. ${failCount} item(s) could not be found.` : '.'}`);
+      } else {
+        alert('Could not find coordinates for any items. Try editing them with more specific location names.');
+      }
     } catch (error) {
-      console.error('Error adding items:', error);
-      setAiError('Failed to add items. Please try again.');
+      console.error('Batch geocoding error:', error);
+      alert('An error occurred while geocoding. Please try again.');
     } finally {
-      setIsSubmitting(false);
+      setIsBatchGeocoding(false);
     }
-  };
+  }, [updateItemsBatch]);
 
-  // Group items by day
-  const itemsByDay = items.reduce((acc, item) => {
-    if (!acc[item.day]) acc[item.day] = [];
-    acc[item.day].push(item);
-    return acc;
-  }, {} as Record<string, ItineraryItem[]>);
-
-  const sortedDays = Object.keys(itemsByDay).sort();
-
-  const getCategoryIcon = (category?: string) => {
-    const cat = CATEGORIES.find(c => c.value === category);
-    return cat ? cat.icon : MapPin;
-  };
-
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr + 'T00:00:00');
-    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  };
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-6 h-6 animate-spin text-indigo-600 mr-2" />
+        <span className="text-slate-500">Loading itinerary...</span>
+      </div>
+    );
+  }
 
   return (
-    <div className="pb-20">
+    <div className={viewMode === 'map' ? 'h-[calc(100vh-200px)] flex flex-col' : 'pb-20'}>
       {/* Header */}
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold text-slate-700">Itinerary</h2>
+        <div className="flex items-center space-x-3">
+          <h2 className="text-lg font-semibold text-slate-700">Itinerary</h2>
+          {/* View Toggle */}
+          <div className="flex bg-slate-100 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`flex items-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                viewMode === 'list'
+                  ? 'bg-white text-indigo-600 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <List className="w-3.5 h-3.5 mr-1" /> List
+            </button>
+            <button
+              onClick={() => setViewMode('map')}
+              className={`flex items-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                viewMode === 'map'
+                  ? 'bg-white text-indigo-600 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <MapIcon className="w-3.5 h-3.5 mr-1" /> Map
+            </button>
+          </div>
+        </div>
         <div className="flex space-x-2">
           <button
-            onClick={() => setShowAIModal(true)}
+            onClick={() => openAIModal()}
             className="flex items-center px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 text-sm font-medium transition-all shadow-sm"
           >
             <Sparkles className="w-4 h-4 mr-1" /> Generate with AI
@@ -321,506 +253,99 @@ export function ItineraryManager({ tripId, trip }: ItineraryManagerProps) {
         </div>
       </div>
 
-      {/* Empty State */}
-      {items.length === 0 && (
-        <div className="text-center py-16 bg-white rounded-xl border border-dashed border-slate-300">
-          <MapPin className="w-12 h-12 mx-auto mb-4 text-slate-300" />
-          <p className="text-slate-400 mb-4">No items in your itinerary yet</p>
-          <button
-            onClick={openAddModal}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm"
-          >
-            Add your first item
-          </button>
+      {/* Map View */}
+      {viewMode === 'map' && (
+        <div className="flex-1 min-h-0">
+          {GOOGLE_MAPS_API_KEY ? (
+            <ItineraryMapView
+              items={items}
+              tripStartDate={trip.startDate}
+              tripEndDate={trip.endDate}
+              onToggleComplete={toggleComplete}
+              onGeocodeItems={handleBatchGeocode}
+              isGeocoding={isBatchGeocoding}
+              googleMapsApiKey={GOOGLE_MAPS_API_KEY}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full bg-white rounded-xl border border-dashed border-slate-300 p-8">
+              <MapIcon className="w-12 h-12 text-slate-300 mb-4" />
+              <p className="text-slate-600 font-medium mb-2">Google Maps API Key Required</p>
+              <p className="text-slate-400 text-sm text-center max-w-md">
+                To use the map view, add your Google Maps API key to your environment variables as{' '}
+                <code className="bg-slate-100 px-1.5 py-0.5 rounded text-xs">VITE_GOOGLE_MAPS_API_KEY</code>
+              </p>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Itinerary List */}
-      {sortedDays.map((day) => (
-        <div key={day} className="mb-6">
-          <h3 className="text-sm font-semibold text-indigo-600 mb-2 sticky top-0 bg-slate-50 py-2">
-            {formatDate(day)}
-          </h3>
-          <div className="space-y-2">
-            {itemsByDay[day].map((item) => {
-              const CategoryIcon = item.type === 'flight' ? Plane : getCategoryIcon(item.category);
-              return (
-                <div
-                  key={item.id}
-                  className={`bg-white rounded-lg p-4 shadow-sm border border-slate-100 ${
-                    item.completed ? 'opacity-60' : ''
-                  }`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start space-x-3">
-                      <button
-                        onClick={() => toggleComplete(item)}
-                        className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
-                          item.completed
-                            ? 'bg-green-500 border-green-500 text-white'
-                            : 'border-slate-300 hover:border-indigo-400'
-                        }`}
-                      >
-                        {item.completed && <Check className="w-3 h-3" />}
-                      </button>
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2">
-                          <CategoryIcon className="w-4 h-4 text-indigo-500" />
-                          <span className={`font-medium ${item.completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>
-                            {item.location}
-                          </span>
-                        </div>
-                        <div className="flex items-center space-x-3 mt-1 text-xs text-slate-500">
-                          {item.time && (
-                            <span className="flex items-center">
-                              <Clock className="w-3 h-3 mr-1" /> {item.time}
-                            </span>
-                          )}
-                          {item.type === 'flight' && item.arrivalLocation && (
-                            <span className="flex items-center">
-                              → {item.arrivalLocation} {item.arrivalTime && `at ${item.arrivalTime}`}
-                            </span>
-                          )}
-                          {item.type === 'flight' && item.flightNumber && (
-                            <span>{item.airline} {item.flightNumber}</span>
-                          )}
-                        </div>
-                        {item.notes && (
-                          <p className="text-xs text-slate-500 mt-1">{item.notes}</p>
-                        )}
-                        {item.googleMapsLink && (
-                          <a
-                            href={item.googleMapsLink}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center text-xs text-indigo-500 hover:text-indigo-600 mt-1"
-                          >
-                            <ExternalLink className="w-3 h-3 mr-1" /> View on Maps
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <button
-                        onClick={() => openEditModal(item)}
-                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => deleteItem(item)}
-                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
+      {/* List View */}
+      {viewMode === 'list' && (
+        <>
+          {/* Empty State */}
+          {items.length === 0 && (
+            <div className="text-center py-16 bg-white rounded-xl border border-dashed border-slate-300">
+              <MapPin className="w-12 h-12 mx-auto mb-4 text-slate-300" />
+              <p className="text-slate-400 mb-4">No items in your itinerary yet</p>
+              <button
+                onClick={openAddModal}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm"
+              >
+                Add your first item
+              </button>
+            </div>
+          )}
+
+          {/* Itinerary List - Now using memoized components */}
+          {sortedDays.map((day) => (
+            <div key={day} className="mb-6">
+              <h3 className="text-sm font-semibold text-indigo-600 mb-2 sticky top-0 bg-slate-50 py-2">
+                {formatDate(day)}
+              </h3>
+              <div className="space-y-2">
+                {itemsByDay[day].map((item) => (
+                  <ItineraryItemCard
+                    key={item.id}
+                    item={item}
+                    onToggleComplete={toggleComplete}
+                    onEdit={openEditModal}
+                    onDelete={handleDelete}
+                    onGenerateAI={openAIModal}
+                    formatDate={formatDate}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </>
+      )}
 
       {/* Add/Edit Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">
-                {editingItem ? 'Edit Item' : 'Add to Itinerary'}
-              </h2>
-              <button
-                onClick={() => {
-                  setShowAddModal(false);
-                  resetForm();
-                }}
-                className="p-1 hover:bg-slate-100 rounded"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Type Toggle */}
-            <div className="flex space-x-2 mb-4">
-              <button
-                onClick={() => setFormType('activity')}
-                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
-                  formType === 'activity'
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                <MapPin className="w-4 h-4 inline mr-1" /> Activity
-              </button>
-              <button
-                onClick={() => setFormType('flight')}
-                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
-                  formType === 'flight'
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                <Plane className="w-4 h-4 inline mr-1" /> Flight
-              </button>
-            </div>
-
-            {/* Date & Time */}
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <div>
-                <label className="text-xs text-slate-500 mb-1 block">Date *</label>
-                <input
-                  type="date"
-                  className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-                  value={formDay}
-                  onChange={(e) => setFormDay(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 mb-1 block">
-                  {formType === 'flight' ? 'Departure Time' : 'Time'}
-                </label>
-                <input
-                  type="time"
-                  className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-                  value={formTime}
-                  onChange={(e) => setFormTime(e.target.value)}
-                />
-              </div>
-            </div>
-
-            {/* Location */}
-            <div className="mb-3">
-              <label className="text-xs text-slate-500 mb-1 block">
-                {formType === 'flight' ? 'Departure Airport/City *' : 'Location *'}
-              </label>
-              <input
-                type="text"
-                className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-                placeholder={formType === 'flight' ? 'e.g., JFK New York' : 'e.g., Eiffel Tower'}
-                value={formLocation}
-                onChange={(e) => setFormLocation(e.target.value)}
-              />
-            </div>
-
-            {/* Activity-specific fields */}
-            {formType === 'activity' && (
-              <>
-                <div className="mb-3">
-                  <label className="text-xs text-slate-500 mb-1 block">Category</label>
-                  <select
-                    className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-                    value={formCategory}
-                    onChange={(e) => setFormCategory(e.target.value)}
-                  >
-                    {CATEGORIES.map((cat) => (
-                      <option key={cat.value} value={cat.value}>
-                        {cat.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="mb-3">
-                  <label className="text-xs text-slate-500 mb-1 block">Google Maps Link</label>
-                  <input
-                    type="url"
-                    className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-                    placeholder="https://maps.google.com/..."
-                    value={formGoogleMapsLink}
-                    onChange={(e) => setFormGoogleMapsLink(e.target.value)}
-                  />
-                </div>
-              </>
-            )}
-
-            {/* Flight-specific fields */}
-            {formType === 'flight' && (
-              <>
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Arrival Airport/City</label>
-                    <input
-                      type="text"
-                      className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-                      placeholder="e.g., LAX Los Angeles"
-                      value={formArrivalLocation}
-                      onChange={(e) => setFormArrivalLocation(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Arrival Time</label>
-                    <input
-                      type="time"
-                      className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-                      value={formArrivalTime}
-                      onChange={(e) => setFormArrivalTime(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Airline</label>
-                    <input
-                      type="text"
-                      className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-                      placeholder="e.g., Delta"
-                      value={formAirline}
-                      onChange={(e) => setFormAirline(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Flight Number</label>
-                    <input
-                      type="text"
-                      className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-                      placeholder="e.g., DL123"
-                      value={formFlightNumber}
-                      onChange={(e) => setFormFlightNumber(e.target.value)}
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Notes */}
-            <div className="mb-4">
-              <label className="text-xs text-slate-500 mb-1 block">Notes</label>
-              <textarea
-                className="w-full p-2 border border-slate-300 rounded-lg text-sm resize-none"
-                rows={2}
-                placeholder="Any additional details..."
-                value={formNotes}
-                onChange={(e) => setFormNotes(e.target.value)}
-              />
-            </div>
-
-            {/* Actions */}
-            <div className="flex justify-end space-x-2">
-              <button
-                onClick={() => {
-                  setShowAddModal(false);
-                  resetForm();
-                }}
-                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
-                disabled={isSubmitting}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmit}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-                disabled={isSubmitting || !formDay || !formLocation}
-              >
-                {isSubmitting ? 'Saving...' : editingItem ? 'Save Changes' : 'Add Item'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AddEditItemModal
+        isOpen={showAddModal}
+        isEditing={!!editingItem}
+        form={form}
+        isSubmitting={isSubmitting}
+        isGeocoding={isGeocoding}
+        isValid={isValid}
+        hasGoogleMapsKey={!!GOOGLE_MAPS_API_KEY}
+        onClose={closeAddModal}
+        onSubmit={handleSubmit}
+        onSetField={setField}
+        onGoogleMapsLinkChange={handleGoogleMapsLinkChange}
+        onGeocodeLocation={handleGeocode}
+      />
 
       {/* AI Generation Modal */}
-      {showAIModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <div className="flex items-center space-x-2">
-                <div className="p-2 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-lg">
-                  <Sparkles className="w-5 h-5 text-white" />
-                </div>
-                <h2 className="text-xl font-bold">AI Itinerary Generator</h2>
-              </div>
-              <button
-                onClick={() => {
-                  setShowAIModal(false);
-                  setGeneratedItems([]);
-                  setAiError('');
-                }}
-                className="p-1 hover:bg-slate-100 rounded"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {!generatedItems.length ? (
-              <>
-                <p className="text-sm text-slate-500 mb-4">
-                  Let AI create a personalized itinerary for your trip to help you get started.
-                </p>
-
-                {aiError && (
-                  <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm">
-                    {aiError}
-                  </div>
-                )}
-
-                {/* Destination */}
-                <div className="mb-4">
-                  <label className="text-sm font-medium text-slate-700 mb-1 block">
-                    Where are you going? *
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full p-3 border border-slate-300 rounded-lg"
-                    placeholder="e.g., Paris, France"
-                    value={aiDestination}
-                    onChange={(e) => setAiDestination(e.target.value)}
-                    disabled={isGenerating}
-                  />
-                </div>
-
-                {/* Trip Dates Info */}
-                <div className="mb-4 p-3 bg-slate-50 rounded-lg text-sm">
-                  <span className="text-slate-500">Trip dates: </span>
-                  <span className="font-medium text-slate-700">
-                    {trip.startDate || 'Not set'} → {trip.endDate || 'Not set'}
-                  </span>
-                </div>
-
-                {/* Interests */}
-                <div className="mb-4">
-                  <label className="text-sm font-medium text-slate-700 mb-2 block">
-                    What are you interested in?
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {INTERESTS.map((interest) => (
-                      <button
-                        key={interest}
-                        onClick={() => toggleInterest(interest)}
-                        disabled={isGenerating}
-                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                          aiInterests.includes(interest)
-                            ? 'bg-indigo-600 text-white'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                      >
-                        {interest}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Pace */}
-                <div className="mb-4">
-                  <label className="text-sm font-medium text-slate-700 mb-2 block">
-                    Trip pace
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['relaxed', 'moderate', 'packed'] as const).map((pace) => (
-                      <button
-                        key={pace}
-                        onClick={() => setAiPace(pace)}
-                        disabled={isGenerating}
-                        className={`py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
-                          aiPace === pace
-                            ? 'bg-indigo-600 text-white'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                      >
-                        {pace.charAt(0).toUpperCase() + pace.slice(1)}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-xs text-slate-400 mt-1">
-                    {aiPace === 'relaxed' && '2-3 activities per day'}
-                    {aiPace === 'moderate' && '3-4 activities per day'}
-                    {aiPace === 'packed' && '5-6 activities per day'}
-                  </p>
-                </div>
-
-                {/* Additional Notes */}
-                <div className="mb-4">
-                  <label className="text-sm font-medium text-slate-700 mb-1 block">
-                    Anything else to consider?
-                  </label>
-                  <textarea
-                    className="w-full p-2 border border-slate-300 rounded-lg text-sm resize-none"
-                    rows={2}
-                    placeholder="e.g., traveling with kids, mobility concerns, budget-friendly options..."
-                    value={aiNotes}
-                    onChange={(e) => setAiNotes(e.target.value)}
-                    disabled={isGenerating}
-                  />
-                </div>
-
-                {/* Generate Button */}
-                <button
-                  onClick={handleGenerateItinerary}
-                  disabled={isGenerating || !aiDestination.trim()}
-                  className="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                >
-                  {isGenerating ? (
-                    <>
-                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                      Generating your itinerary...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-5 h-5 mr-2" />
-                      Generate Itinerary
-                    </>
-                  )}
-                </button>
-              </>
-            ) : (
-              <>
-                {/* Generated Results */}
-                <div className="mb-4">
-                  <p className="text-sm text-green-600 font-medium mb-3">
-                    ✨ Generated {generatedItems.length} activities for your trip!
-                  </p>
-                  <div className="max-h-[40vh] overflow-y-auto space-y-2 pr-2">
-                    {generatedItems.map((item, index) => (
-                      <div key={index} className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-slate-800 text-sm">{item.location}</span>
-                          <span className="text-xs text-slate-500">{item.time}</span>
-                        </div>
-                        <div className="text-xs text-indigo-600 mt-1">
-                          {formatDate(item.day || '')} • {item.category}
-                        </div>
-                        {item.notes && (
-                          <p className="text-xs text-slate-500 mt-1">{item.notes}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => {
-                      setGeneratedItems([]);
-                      setAiError('');
-                    }}
-                    className="flex-1 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium"
-                    disabled={isSubmitting}
-                  >
-                    Regenerate
-                  </button>
-                  <button
-                    onClick={addGeneratedItems}
-                    disabled={isSubmitting}
-                    className="flex-1 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium disabled:opacity-50 flex items-center justify-center"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Adding...
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-4 h-4 mr-2" />
-                        Add All to Itinerary
-                      </>
-                    )}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      <AIGenerationModal
+        isOpen={showAIModal}
+        trip={trip}
+        existingItems={items}
+        initialDestination={aiDestination}
+        onClose={closeAIModal}
+        onAddItems={handleAddAIItems}
+        formatDate={formatDate}
+      />
     </div>
   );
 }

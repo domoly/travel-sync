@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@react-google-maps/api": "^2.20.7",
     "firebase": "^12.6.0",
     "lucide-react": "^0.556.0",
     "react": "^19.2.0",

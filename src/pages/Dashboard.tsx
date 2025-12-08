@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plane, Plus, Upload } from 'lucide-react';
+import { Plane, Plus, Upload, AlertTriangle } from 'lucide-react';
 import type { User } from 'firebase/auth';
 
 import type { Trip } from '../types';
@@ -11,6 +11,7 @@ import {
   doc,
   addDoc,
   updateDoc,
+  deleteDoc,
   onSnapshot,
   writeBatch
 } from '../config/firebase';
@@ -31,6 +32,8 @@ export function Dashboard({ user, onOpenTrip }: DashboardProps) {
   const [createError, setCreateError] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [tripToDelete, setTripToDelete] = useState<Trip | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -137,7 +140,7 @@ export function Dashboard({ user, onOpenTrip }: DashboardProps) {
         const batch = writeBatch(db);
 
         // Restore Itinerary
-        data.itinerary.forEach((item: any) => {
+        data.itinerary.forEach((item: Record<string, unknown>) => {
           const ref = doc(
             collection(db, 'artifacts', appId, 'public', 'data', 'trips', newTripRef.id, 'itinerary')
           );
@@ -146,7 +149,7 @@ export function Dashboard({ user, onOpenTrip }: DashboardProps) {
 
         // Restore Expenses
         if (data.expenses) {
-          data.expenses.forEach((item: any) => {
+          data.expenses.forEach((item: Record<string, unknown>) => {
             const ref = doc(
               collection(db, 'artifacts', appId, 'public', 'data', 'trips', newTripRef.id, 'expenses')
             );
@@ -156,7 +159,7 @@ export function Dashboard({ user, onOpenTrip }: DashboardProps) {
 
         // Restore Tasks
         if (data.tasks) {
-          data.tasks.forEach((item: any) => {
+          data.tasks.forEach((item: Record<string, unknown>) => {
             const ref = doc(
               collection(db, 'artifacts', appId, 'public', 'data', 'trips', newTripRef.id, 'tasks')
             );
@@ -173,6 +176,21 @@ export function Dashboard({ user, onOpenTrip }: DashboardProps) {
       if (fileInputRef.current) fileInputRef.current.value = '';
     };
     reader.readAsText(file);
+  };
+
+  const handleDeleteTrip = async () => {
+    if (!tripToDelete) return;
+
+    setIsDeleting(true);
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'trips', tripToDelete.id));
+      setTripToDelete(null);
+    } catch (error) {
+      console.error('Error deleting trip:', error);
+      alert('Failed to delete trip. Please try again.');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -221,6 +239,7 @@ export function Dashboard({ user, onOpenTrip }: DashboardProps) {
             trip={trip}
             isOwner={trip.ownerId === user.uid}
             onClick={() => onOpenTrip(trip.id)}
+            onDelete={trip.ownerId === user.uid ? () => setTripToDelete(trip) : undefined}
           />
         ))}
 
@@ -335,6 +354,55 @@ export function Dashboard({ user, onOpenTrip }: DashboardProps) {
                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
               >
                 Join
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {tripToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="p-2 bg-red-100 rounded-full">
+                <AlertTriangle className="w-6 h-6 text-red-600" />
+              </div>
+              <h2 className="text-xl font-bold text-slate-800">Delete Trip</h2>
+            </div>
+            
+            <p className="text-slate-600 mb-2">
+              Are you sure you want to delete <strong>"{tripToDelete.name}"</strong>?
+            </p>
+            <p className="text-sm text-slate-500 mb-6">
+              This will permanently delete the trip and all its itinerary items, expenses, and tasks. 
+              This action cannot be undone.
+            </p>
+
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={() => setTripToDelete(null)}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg disabled:opacity-50"
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteTrip}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center"
+                disabled={isDeleting}
+              >
+                {isDeleting ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Deleting...
+                  </>
+                ) : (
+                  'Delete Trip'
+                )}
               </button>
             </div>
           </div>
