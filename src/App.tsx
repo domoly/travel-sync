@@ -8,11 +8,16 @@ import { TripView } from './pages/TripView';
 import {
   auth,
   signInAnonymously,
-  onAuthStateChanged
+  onAuthStateChanged,
+  db,
+  appId,
+  doc,
+  updateDoc,
+  onSnapshot
 } from './config/firebase';
 
 // App version - update this with each deployment
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 
 // Wrapper component for Dashboard with navigation
 function DashboardRoute({ user }: { user: User }) {
@@ -42,6 +47,94 @@ function TripViewRoute({ user }: { user: User }) {
       tripId={id}
       onBack={() => navigate('/')}
     />
+  );
+}
+
+// Wrapper component for joining a trip via shareable link
+function JoinTripRoute({ user }: { user: User }) {
+  const { tripId } = useParams<{ tripId: string }>();
+  const navigate = useNavigate();
+  const [status, setStatus] = useState<'joining' | 'success' | 'error'>('joining');
+
+  useEffect(() => {
+    if (!tripId) {
+      navigate('/');
+      return;
+    }
+
+    const tripRef = doc(db, 'artifacts', appId, 'public', 'data', 'trips', tripId);
+    
+    const unsub = onSnapshot(
+      tripRef,
+      async (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const members = data.members || [];
+          
+          if (!members.includes(user.uid)) {
+            try {
+              await updateDoc(tripRef, {
+                members: [...members, user.uid]
+              });
+            } catch (error) {
+              console.error('Error joining trip:', error);
+            }
+          }
+          
+          setStatus('success');
+          // Navigate to the trip after a brief moment
+          setTimeout(() => navigate(`/trip/${tripId}`), 500);
+        } else {
+          setStatus('error');
+        }
+        unsub();
+      },
+      (error) => {
+        console.error('Error fetching trip:', error);
+        setStatus('error');
+        unsub();
+      }
+    );
+
+    return () => unsub();
+  }, [tripId, user.uid, navigate]);
+
+  if (status === 'joining') {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-slate-50 text-slate-600">
+        <div className="animate-spin mb-4">
+          <Plane className="w-8 h-8 text-indigo-600" />
+        </div>
+        <p className="text-lg font-medium">Joining trip...</p>
+      </div>
+    );
+  }
+
+  if (status === 'error') {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-slate-50 text-slate-600">
+        <div className="text-red-500 mb-4">
+          <Plane className="w-8 h-8" />
+        </div>
+        <p className="text-lg font-medium mb-2">Trip not found</p>
+        <p className="text-sm text-slate-400 mb-4">This link may be invalid or the trip may have been deleted.</p>
+        <button
+          onClick={() => navigate('/')}
+          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+        >
+          Go to Dashboard
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center h-screen bg-slate-50 text-slate-600">
+      <div className="text-green-500 mb-4">
+        <Plane className="w-8 h-8" />
+      </div>
+      <p className="text-lg font-medium">Successfully joined! Redirecting...</p>
+    </div>
   );
 }
 
@@ -91,6 +184,7 @@ function AppContent() {
       <Routes>
         <Route path="/" element={<DashboardRoute user={user} />} />
         <Route path="/trip/:id" element={<TripViewRoute user={user} />} />
+        <Route path="/join/:tripId" element={<JoinTripRoute user={user} />} />
       </Routes>
       
       {/* Version indicator */}

@@ -33,7 +33,7 @@ function AdminPanel(_props: { tripId: string; trip: Trip }) {
 export function TripView({ user: _user, tripId, onBack }: TripViewProps) {
   const [activeTab, setActiveTab] = useState<'itinerary' | 'expenses' | 'admin'>('itinerary');
   const [trip, setTrip] = useState<Trip | null>(null);
-  const [copyStatus, setCopyStatus] = useState('Copy ID');
+  const [copyStatus, setCopyStatus] = useState('Share');
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -47,22 +47,23 @@ export function TripView({ user: _user, tripId, onBack }: TripViewProps) {
     return () => unsub();
   }, [tripId]);
 
-  const copyTripId = () => {
+  const copyShareLink = () => {
+    const shareLink = `${window.location.origin}/join/${tripId}`;
     navigator.clipboard
-      .writeText(tripId)
+      .writeText(shareLink)
       .then(() => {
-        setCopyStatus('Copied!');
-        setTimeout(() => setCopyStatus('Copy ID'), 2000);
+        setCopyStatus('Link Copied!');
+        setTimeout(() => setCopyStatus('Share'), 2000);
       })
       .catch(() => {
         const textarea = document.createElement('textarea');
-        textarea.value = tripId;
+        textarea.value = shareLink;
         document.body.appendChild(textarea);
         textarea.select();
         document.execCommand('copy');
         document.body.removeChild(textarea);
-        setCopyStatus('Copied!');
-        setTimeout(() => setCopyStatus('Copy ID'), 2000);
+        setCopyStatus('Link Copied!');
+        setTimeout(() => setCopyStatus('Share'), 2000);
       });
   };
 
@@ -93,7 +94,7 @@ export function TripView({ user: _user, tripId, onBack }: TripViewProps) {
             </div>
           </div>
           <button
-            onClick={copyTripId}
+            onClick={copyShareLink}
             className="flex items-center text-xs bg-indigo-700 hover:bg-indigo-500 px-3 py-1.5 rounded-full transition-colors"
           >
             <Share2 className="w-3 h-3 mr-1" /> {copyStatus}

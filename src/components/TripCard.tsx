@@ -1,4 +1,4 @@
-import { Calendar, Users, Trash2 } from 'lucide-react';
+import { Calendar, Users, Trash2, Download } from 'lucide-react';
 import type { Trip } from '../types';
 
 interface TripCardProps {
@@ -6,13 +6,21 @@ interface TripCardProps {
   isOwner: boolean;
   onClick: () => void;
   onDelete?: () => void;
+  onExport?: () => void;
 }
 
-export function TripCard({ trip, isOwner, onClick, onDelete }: TripCardProps) {
+export function TripCard({ trip, isOwner, onClick, onDelete, onExport }: TripCardProps) {
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent card click
     if (onDelete) {
       onDelete();
+    }
+  };
+
+  const handleExport = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card click
+    if (onExport) {
+      onExport();
     }
   };
 
@@ -25,11 +33,20 @@ export function TripCard({ trip, isOwner, onClick, onDelete }: TripCardProps) {
         <h3 className="font-bold text-lg text-slate-800 group-hover:text-indigo-600 transition-colors pr-2">
           {trip.name}
         </h3>
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-1">
           {isOwner && (
-            <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-1 rounded-full">
+            <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-1 rounded-full mr-1">
               Owner
             </span>
+          )}
+          {onExport && (
+            <button
+              onClick={handleExport}
+              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+              title="Export trip backup"
+            >
+              <Download className="w-4 h-4" />
+            </button>
           )}
           {isOwner && onDelete && (
             <button
