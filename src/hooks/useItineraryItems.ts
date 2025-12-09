@@ -10,14 +10,85 @@ import {
 } from 'firebase/firestore';
 import { db, appId } from '../config/firebase';
 import { useFirebasePaths } from './useFirebasePaths';
-import type { ItineraryItem } from '../types';
+import type { ItineraryItem, DisplayItineraryItem, LodgingPhase } from '../types';
+
+/**
+ * Helper to format a Date as YYYY-MM-DD in local timezone (avoids UTC conversion issues)
+ */
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Helper to get all dates between start and end (inclusive of start, exclusive of end for lodging)
+ * For lodging: startDate is check-in day, endDate is check-out day
+ * We show "staying" on nights you sleep there, and "check-out" on the morning you leave
+ */
+function getDatesBetween(startDate: string, endDate: string): string[] {
+  const dates: string[] = [];
+  const current = new Date(startDate + 'T12:00:00'); // Use noon to avoid any DST edge cases
+  const end = new Date(endDate + 'T12:00:00');
+  
+  while (current <= end) {
+    dates.push(formatLocalDate(current));
+    current.setDate(current.getDate() + 1);
+  }
+  
+  return dates;
+}
+
+/**
+ * Expands multi-day lodging items into display items for each day they span
+ */
+function expandLodgingItems(items: ItineraryItem[]): DisplayItineraryItem[] {
+  const displayItems: DisplayItineraryItem[] = [];
+  
+  for (const item of items) {
+    const isMultiDayLodging = item.category === 'lodging' && item.endDay && item.endDay !== item.day;
+    
+    if (isMultiDayLodging) {
+      const stayDates = getDatesBetween(item.day, item.endDay!);
+      
+      stayDates.forEach((date, index) => {
+        let lodgingPhase: LodgingPhase;
+        
+        if (index === 0) {
+          lodgingPhase = 'check-in';
+        } else if (index === stayDates.length - 1) {
+          lodgingPhase = 'check-out';
+        } else {
+          lodgingPhase = 'staying';
+        }
+        
+        displayItems.push({
+          ...item,
+          displayDay: date,
+          lodgingPhase,
+          isVirtual: index !== 0, // First day uses the original item
+        });
+      });
+    } else {
+      // Non-lodging items or single-day lodging
+      displayItems.push({
+        ...item,
+        displayDay: item.day,
+        isVirtual: false,
+      });
+    }
+  }
+  
+  return displayItems;
+}
 
 interface UseItineraryItemsReturn {
   items: ItineraryItem[];
   isLoading: boolean;
   error: string | null;
-  // Grouped and sorted data (memoized)
-  itemsByDay: Record<string, ItineraryItem[]>;
+  // Grouped and sorted data (memoized) - now uses DisplayItineraryItem for multi-day support
+  itemsByDay: Record<string, DisplayItineraryItem[]>;
   sortedDays: string[];
   // CRUD operations
   addItem: (item: Partial<ItineraryItem>) => Promise<void>;
@@ -72,13 +143,47 @@ export function useItineraryItems(tripId: string): UseItineraryItemsReturn {
     return () => unsubscribe();
   }, [paths.itineraryCollection]);
 
-  // Memoized grouping by day
+  // Memoized grouping by day with multi-day lodging expansion
   const itemsByDay = useMemo(() => {
-    return items.reduce((acc, item) => {
-      if (!acc[item.day]) acc[item.day] = [];
-      acc[item.day].push(item);
+    // Expand multi-day lodging items to appear on each day
+    const displayItems = expandLodgingItems(items);
+    
+    // Group by displayDay
+    const grouped = displayItems.reduce((acc, item) => {
+      if (!acc[item.displayDay]) acc[item.displayDay] = [];
+      acc[item.displayDay].push(item);
       return acc;
-    }, {} as Record<string, ItineraryItem[]>);
+    }, {} as Record<string, DisplayItineraryItem[]>);
+    
+    // Sort items within each day:
+    // 1. Check-out items first (you're leaving from here in the morning)
+    // 2. Then by time
+    // 3. Staying items at the end (context for where you're sleeping)
+    // 4. Check-in items near the end (typically evening arrival)
+    for (const day of Object.keys(grouped)) {
+      grouped[day].sort((a, b) => {
+        // Priority order: check-out (0) -> regular/no phase (1) -> staying (2) -> check-in (3)
+        const phaseOrder = (phase?: LodgingPhase) => {
+          if (phase === 'check-out') return 0;
+          if (!phase) return 1;
+          if (phase === 'staying') return 2;
+          if (phase === 'check-in') return 3;
+          return 1;
+        };
+        
+        const aPhase = phaseOrder(a.lodgingPhase);
+        const bPhase = phaseOrder(b.lodgingPhase);
+        
+        // If same phase category, sort by time
+        if (aPhase === bPhase) {
+          return a.time.localeCompare(b.time);
+        }
+        
+        return aPhase - bPhase;
+      });
+    }
+    
+    return grouped;
   }, [items]);
 
   // Memoized sorted days

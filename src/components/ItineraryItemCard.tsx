@@ -15,9 +15,12 @@ import {
   Car,
   Music,
   CalendarDays,
-  Wand2
+  Wand2,
+  LogOut,
+  Moon,
+  LogIn
 } from 'lucide-react';
-import type { ItineraryItem } from '../types';
+import type { ItineraryItem, DisplayItineraryItem } from '../types';
 
 // Category icon mapping
 const CATEGORY_ICONS = {
@@ -31,13 +34,62 @@ const CATEGORY_ICONS = {
 } as const;
 
 interface ItineraryItemCardProps {
-  item: ItineraryItem;
+  item: DisplayItineraryItem;
   onToggleComplete: (item: ItineraryItem) => void;
   onEdit: (item: ItineraryItem) => void;
   onDelete: (item: ItineraryItem) => void;
   onGenerateAI?: (location: string) => void;
   formatDate: (dateStr: string) => string;
 }
+
+/**
+ * Compact lodging card for check-out and staying phases
+ */
+const LodgingPhaseCard = memo(function LodgingPhaseCard({
+  item,
+  onEdit,
+  formatDate,
+}: {
+  item: DisplayItineraryItem;
+  onEdit: (item: ItineraryItem) => void;
+  formatDate: (dateStr: string) => string;
+}) {
+  const isCheckOut = item.lodgingPhase === 'check-out';
+  
+  const PhaseIcon = isCheckOut ? LogOut : Moon;
+  const phaseLabel = isCheckOut ? 'Check-out' : 'Staying tonight';
+  const bgColor = isCheckOut 
+    ? 'bg-orange-50 border-orange-200' 
+    : 'bg-indigo-50 border-indigo-200';
+  const iconColor = isCheckOut ? 'text-orange-500' : 'text-indigo-500';
+  const labelColor = isCheckOut ? 'text-orange-700' : 'text-indigo-700';
+  
+  return (
+    <div className={`rounded-lg px-3 py-2 border ${bgColor} flex items-center justify-between`}>
+      <div className="flex items-center space-x-2">
+        <PhaseIcon className={`w-4 h-4 ${iconColor}`} />
+        <span className={`text-sm font-medium ${labelColor}`}>
+          {phaseLabel}
+        </span>
+        <span className="text-sm text-slate-600">
+          @ {item.location}
+        </span>
+        {isCheckOut && (
+          <span className="text-xs text-slate-400">
+            (stayed since {formatDate(item.day)})
+          </span>
+        )}
+      </div>
+      <button
+        onClick={() => onEdit(item)}
+        className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-white rounded transition-colors"
+        title="Edit stay details"
+      >
+        <Edit2 className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+});
 
 /**
  * Memoized card component for a single itinerary item
@@ -54,11 +106,30 @@ export const ItineraryItemCard = memo(function ItineraryItemCard({
   const isLodging = item.category === 'lodging';
   const isMultiDay = isLodging && item.endDay && item.endDay !== item.day;
   const isFlight = item.type === 'flight';
+  const lodgingPhase = item.lodgingPhase;
+  
+  // For staying and check-out phases, render a compact card
+  if (lodgingPhase === 'staying' || lodgingPhase === 'check-out') {
+    return (
+      <LodgingPhaseCard 
+        item={item} 
+        onEdit={onEdit} 
+        formatDate={formatDate} 
+      />
+    );
+  }
   
   // Get the appropriate icon
   const CategoryIcon = isFlight 
     ? Plane 
-    : CATEGORY_ICONS[item.category as keyof typeof CATEGORY_ICONS] || MapPin;
+    : lodgingPhase === 'check-in' 
+      ? LogIn 
+      : CATEGORY_ICONS[item.category as keyof typeof CATEGORY_ICONS] || MapPin;
+
+  // Calculate nights for multi-day lodging
+  const nights = isMultiDay 
+    ? Math.ceil((new Date(item.endDay!).getTime() - new Date(item.day).getTime()) / (1000 * 60 * 60 * 24))
+    : 0;
 
   return (
     <div
@@ -82,21 +153,21 @@ export const ItineraryItemCard = memo(function ItineraryItemCard({
           
           <div className="flex-1">
             {/* Title row */}
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2 flex-wrap gap-y-1">
               <CategoryIcon className={`w-4 h-4 ${isLodging ? 'text-amber-600' : 'text-indigo-500'}`} />
               <span className={`font-medium ${item.completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>
-                {item.location}
+                {lodgingPhase === 'check-in' ? `Check-in: ${item.location}` : item.location}
               </span>
               {isMultiDay && (
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
                   <CalendarDays className="w-3 h-3 mr-1" />
-                  {Math.ceil((new Date(item.endDay!).getTime() - new Date(item.day).getTime()) / (1000 * 60 * 60 * 24))} nights
+                  {nights} {nights === 1 ? 'night' : 'nights'}
                 </span>
               )}
             </div>
             
             {/* Time/details row */}
-            <div className="flex items-center space-x-3 mt-1 text-xs text-slate-500">
+            <div className="flex items-center space-x-3 mt-1 text-xs text-slate-500 flex-wrap gap-y-1">
               {isMultiDay ? (
                 <span className="flex items-center">
                   <Clock className="w-3 h-3 mr-1" /> 
@@ -139,8 +210,8 @@ export const ItineraryItemCard = memo(function ItineraryItemCard({
               </a>
             )}
             
-            {/* AI Suggestion for Lodging */}
-            {isLodging && onGenerateAI && (
+            {/* AI Suggestion for Lodging - only show on check-in day */}
+            {isLodging && lodgingPhase === 'check-in' && onGenerateAI && (
               <button
                 onClick={() => onGenerateAI(item.location)}
                 className="mt-2 inline-flex items-center px-2.5 py-1.5 rounded-lg text-xs font-medium bg-gradient-to-r from-purple-50 to-indigo-50 text-purple-700 hover:from-purple-100 hover:to-indigo-100 border border-purple-200 transition-colors"
@@ -160,12 +231,15 @@ export const ItineraryItemCard = memo(function ItineraryItemCard({
           >
             <Edit2 className="w-4 h-4" />
           </button>
-          <button
-            onClick={() => onDelete(item)}
-            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          {/* Only show delete on the original item (check-in day) */}
+          {!item.isVirtual && (
+            <button
+              onClick={() => onDelete(item)}
+              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
     </div>
