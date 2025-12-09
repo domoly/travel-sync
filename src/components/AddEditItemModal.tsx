@@ -58,7 +58,6 @@ export const AddEditItemModal = memo(function AddEditItemModal({
   if (!isOpen) return null;
 
   const isLodging = form.type === 'activity' && form.category === 'lodging';
-  const hasFlightData = form.flightValidated || (form.departureAirportCode && form.arrivalAirportCode);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -162,19 +161,19 @@ export const AddEditItemModal = memo(function AddEditItemModal({
           )}
         </div>
 
-        {/* Location */}
-        <div className="mb-3">
-          <label className="text-xs text-slate-500 mb-1 block">
-            {form.type === 'flight' ? 'Departure Airport/City *' : 'Location *'}
-          </label>
-          <input
-            type="text"
-            className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-            placeholder={form.type === 'flight' ? 'e.g., JFK New York' : 'e.g., Eiffel Tower'}
-            value={form.location}
-            onChange={(e) => onSetField('location', e.target.value)}
-          />
-        </div>
+        {/* Location - only for non-flight items */}
+        {form.type !== 'flight' && (
+          <div className="mb-3">
+            <label className="text-xs text-slate-500 mb-1 block">Location *</label>
+            <input
+              type="text"
+              className="w-full p-2 border border-slate-300 rounded-lg text-sm"
+              placeholder="e.g., Eiffel Tower"
+              value={form.location}
+              onChange={(e) => onSetField('location', e.target.value)}
+            />
+          </div>
+        )}
 
         {/* Activity-specific fields */}
         {form.type === 'activity' && (
@@ -260,128 +259,169 @@ export const AddEditItemModal = memo(function AddEditItemModal({
         {/* Flight-specific fields */}
         {form.type === 'flight' && (
           <>
-            {/* Flight Number & Lookup */}
-            <div className="mb-3">
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs text-slate-500">Flight Number</label>
+            {/* Step 1: Flight Number with prominent lookup */}
+            <div className="mb-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-medium text-slate-700">Step 1: Flight Number</label>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  className="flex-1 p-2 border border-slate-300 rounded-lg text-sm font-mono"
+                  placeholder="e.g., LY317, UA123, BA456"
+                  value={form.flightNumber}
+                  onChange={(e) => onSetField('flightNumber', e.target.value.toUpperCase())}
+                />
                 <button
                   type="button"
                   onClick={onFlightLookup}
                   disabled={isLookingUpFlight || !form.flightNumber}
-                  className="text-xs text-indigo-600 hover:text-indigo-700 font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
                 >
                   {isLookingUpFlight ? (
-                    <>
-                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                      Looking up...
-                    </>
+                    <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
                     <>
-                      <Search className="w-3 h-3 mr-1" />
-                      Lookup Flight Info
+                      <Search className="w-4 h-4 mr-1" />
+                      Lookup
                     </>
                   )}
                 </button>
               </div>
-              <input
-                type="text"
-                className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-                placeholder="e.g., UA123, BA456, DL789"
-                value={form.flightNumber}
-                onChange={(e) => onSetField('flightNumber', e.target.value.toUpperCase())}
-              />
-              <p className="text-xs text-slate-400 mt-1">
-                Enter flight number to auto-fill airline and airport details
+              {form.airline && (
+                <p className="text-xs text-green-600 mt-2 flex items-center">
+                  <Check className="w-3 h-3 mr-1" /> Airline: {form.airline}
+                </p>
+              )}
+            </div>
+
+            {/* Step 2: Airports */}
+            <div className="mb-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <label className="text-sm font-medium text-slate-700 mb-2 block">Step 2: Airports</label>
+              <p className="text-xs text-slate-500 mb-3">
+                Enter airport codes (JFK, LAX, TLV) or city names, then click Lookup again to validate
               </p>
+              
+              <div className="grid grid-cols-2 gap-3">
+                {/* Departure */}
+                <div>
+                  <label className="text-xs text-slate-500 mb-1 block">From (Departure) *</label>
+                  <input
+                    type="text"
+                    className={`w-full p-2 border rounded-lg text-sm ${
+                      form.departureAirportCode ? 'border-green-300 bg-green-50' : 'border-slate-300'
+                    }`}
+                    placeholder="e.g., JFK or New York"
+                    value={form.location}
+                    onChange={(e) => onSetField('location', e.target.value.toUpperCase())}
+                  />
+                  {form.departureAirportCode ? (
+                    <p className="text-xs text-green-600 mt-1 flex items-center">
+                      <CheckCircle className="w-3 h-3 mr-1" /> {form.departureAirportCode} - {form.departureAirportName}
+                    </p>
+                  ) : form.location && (
+                    <p className="text-xs text-amber-600 mt-1 flex items-center">
+                      <AlertCircle className="w-3 h-3 mr-1" /> Not recognized - try airport code
+                    </p>
+                  )}
+                </div>
+
+                {/* Arrival */}
+                <div>
+                  <label className="text-xs text-slate-500 mb-1 block">To (Arrival)</label>
+                  <input
+                    type="text"
+                    className={`w-full p-2 border rounded-lg text-sm ${
+                      form.arrivalAirportCode ? 'border-green-300 bg-green-50' : 'border-slate-300'
+                    }`}
+                    placeholder="e.g., TLV or Tel Aviv"
+                    value={form.arrivalLocation}
+                    onChange={(e) => onSetField('arrivalLocation', e.target.value.toUpperCase())}
+                  />
+                  {form.arrivalAirportCode ? (
+                    <p className="text-xs text-green-600 mt-1 flex items-center">
+                      <CheckCircle className="w-3 h-3 mr-1" /> {form.arrivalAirportCode} - {form.arrivalAirportName}
+                    </p>
+                  ) : form.arrivalLocation && (
+                    <p className="text-xs text-amber-600 mt-1 flex items-center">
+                      <AlertCircle className="w-3 h-3 mr-1" /> Not recognized - try airport code
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
 
-            {/* Validation Status */}
-            {form.flightNumber && (
-              <div className={`mb-3 p-2 rounded-lg text-xs flex items-center ${
+            {/* Step 3: Times */}
+            <div className="mb-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <label className="text-sm font-medium text-slate-700 mb-2 block">Step 3: Times (optional)</label>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-500 mb-1 block">Departure Time</label>
+                  <input
+                    type="time"
+                    className="w-full p-2 border border-slate-300 rounded-lg text-sm"
+                    value={form.time}
+                    onChange={(e) => onSetField('time', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 mb-1 block">Arrival Time</label>
+                  <input
+                    type="time"
+                    className="w-full p-2 border border-slate-300 rounded-lg text-sm"
+                    value={form.arrivalTime}
+                    onChange={(e) => onSetField('arrivalTime', e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Flight Summary Card */}
+            {(form.airline || form.departureAirportCode || form.arrivalAirportCode) && (
+              <div className={`mb-3 p-3 rounded-lg border ${
                 form.flightValidated 
-                  ? 'bg-green-50 text-green-700 border border-green-200' 
-                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+                  ? 'bg-green-50 border-green-200' 
+                  : 'bg-blue-50 border-blue-200'
               }`}>
-                {form.flightValidated ? (
-                  <>
-                    <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
-                    Flight validated ({form.flightValidationSource === 'api' ? 'live data' : 'database'})
-                  </>
-                ) : (
-                  <>
-                    <AlertCircle className="w-3.5 h-3.5 mr-1.5" />
-                    Flight not validated - enter details manually or use lookup
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* Airline (auto-filled or manual) */}
-            <div className="mb-3">
-              <label className="text-xs text-slate-500 mb-1 block">Airline</label>
-              <input
-                type="text"
-                className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-                placeholder="e.g., United Airlines"
-                value={form.airline}
-                onChange={(e) => onSetField('airline', e.target.value)}
-              />
-            </div>
-
-            {/* Arrival Location & Time */}
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <div>
-                <label className="text-xs text-slate-500 mb-1 block">Arrival Airport/City</label>
-                <input
-                  type="text"
-                  className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-                  placeholder="e.g., LAX or Los Angeles"
-                  value={form.arrivalLocation}
-                  onChange={(e) => onSetField('arrivalLocation', e.target.value)}
-                />
-                {form.arrivalAirportCode && (
-                  <p className="text-xs text-green-600 mt-1 flex items-center">
-                    <Check className="w-3 h-3 mr-1" /> {form.arrivalAirportCode} - {form.arrivalAirportName}
-                  </p>
-                )}
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 mb-1 block">Arrival Time</label>
-                <input
-                  type="time"
-                  className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-                  value={form.arrivalTime}
-                  onChange={(e) => onSetField('arrivalTime', e.target.value)}
-                />
-              </div>
-            </div>
-
-            {/* Airport Codes Summary */}
-            {hasFlightData && (
-              <div className="mb-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
                 <div className="flex items-center justify-between text-sm">
-                  <div className="text-center">
-                    <p className="font-bold text-blue-800">{form.departureAirportCode || '???'}</p>
-                    <p className="text-xs text-blue-600">{form.departureAirportName || form.location}</p>
+                  <div className="text-center min-w-[60px]">
+                    <p className={`font-bold ${form.flightValidated ? 'text-green-800' : 'text-blue-800'}`}>
+                      {form.departureAirportCode || '???'}
+                    </p>
+                    <p className="text-xs text-slate-600 truncate max-w-[80px]">
+                      {form.departureAirportName || form.location || 'Departure'}
+                    </p>
                   </div>
-                  <div className="flex-1 px-4">
+                  <div className="flex-1 px-2">
                     <div className="flex items-center justify-center">
-                      <div className="h-px bg-blue-300 flex-1" />
-                      <Plane className="w-4 h-4 mx-2 text-blue-500" />
-                      <div className="h-px bg-blue-300 flex-1" />
+                      <div className="h-px bg-slate-300 flex-1" />
+                      <div className="mx-2 flex flex-col items-center">
+                        <Plane className={`w-4 h-4 ${form.flightValidated ? 'text-green-500' : 'text-blue-500'}`} />
+                        <span className="text-xs font-mono font-bold text-slate-700">{form.flightNumber}</span>
+                      </div>
+                      <div className="h-px bg-slate-300 flex-1" />
                     </div>
                     {form.airline && (
-                      <p className="text-xs text-blue-500 text-center mt-1">{form.airline}</p>
+                      <p className="text-xs text-slate-500 text-center">{form.airline}</p>
                     )}
                   </div>
-                  <div className="text-center">
-                    <p className="font-bold text-blue-800">{form.arrivalAirportCode || '???'}</p>
-                    <p className="text-xs text-blue-600">{form.arrivalAirportName || form.arrivalLocation}</p>
+                  <div className="text-center min-w-[60px]">
+                    <p className={`font-bold ${form.flightValidated ? 'text-green-800' : 'text-blue-800'}`}>
+                      {form.arrivalAirportCode || '???'}
+                    </p>
+                    <p className="text-xs text-slate-600 truncate max-w-[80px]">
+                      {form.arrivalAirportName || form.arrivalLocation || 'Arrival'}
+                    </p>
                   </div>
                 </div>
-                {form.lat && form.arrivalLat && (
-                  <p className="text-xs text-green-600 mt-2 text-center flex items-center justify-center">
-                    <MapPin className="w-3 h-3 mr-1" /> Both airports will appear on map
+                
+                {form.flightValidated ? (
+                  <p className="text-xs text-green-700 mt-2 text-center flex items-center justify-center">
+                    <CheckCircle className="w-3 h-3 mr-1" /> Flight validated - will show on map
+                  </p>
+                ) : (
+                  <p className="text-xs text-blue-700 mt-2 text-center">
+                    Enter airport codes and click Lookup to validate
                   </p>
                 )}
               </div>

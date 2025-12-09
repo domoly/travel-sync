@@ -282,6 +282,7 @@ export function extractAirportCode(location: string): string | null {
 
 /**
  * Validate and enrich flight information using the database
+ * Now more lenient - returns partial info even with just airline code
  */
 export function validateFlightFromDatabase(
   flightNumber: string,
@@ -302,25 +303,23 @@ export function validateFlightFromDatabase(
   const departureAirport = departureCode ? getAirport(departureCode) : null;
   const arrivalAirport = arrivalCode ? getAirport(arrivalCode) : null;
   
-  // Need at least airline and one airport to provide useful info
-  if (!airline && !departureAirport && !arrivalAirport) {
-    return null;
-  }
-  
+  // Always return info if we have a valid airline code
+  // This allows partial validation (airline only, airline + one airport, etc.)
   return {
     airline: airline || airlineCode,
     airlineCode,
     flightNumber: `${airlineCode}${flightDigits}`,
-    departureAirport: departureAirport?.name || departureLocation,
+    departureAirport: departureAirport?.name || '',
     departureAirportCode: departureCode || '',
     departureCity: departureAirport?.city || '',
     departureLat: departureAirport?.lat || 0,
     departureLng: departureAirport?.lng || 0,
-    arrivalAirport: arrivalAirport?.name || arrivalLocation,
+    arrivalAirport: arrivalAirport?.name || '',
     arrivalAirportCode: arrivalCode || '',
     arrivalCity: arrivalAirport?.city || '',
     arrivalLat: arrivalAirport?.lat || 0,
     arrivalLng: arrivalAirport?.lng || 0,
+    // Fully validated only if airline + both airports are found
     validated: !!(airline && departureAirport && arrivalAirport),
     validationSource: 'database',
   };

@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { ItineraryItem } from '../types';
 import { extractCoordsFromGoogleMapsUrl, geocodeAddress } from '../services/geocoding';
-import { lookupFlight, parseAirlineCode, getAirlineName, type FlightInfo } from '../services/flight';
+import { lookupFlight, type FlightInfo } from '../services/flight';
 
 // Form state interface - consolidates all 14+ separate useState calls
 export interface ItineraryFormState {
@@ -177,7 +177,7 @@ export function useItineraryForm(): UseItineraryFormReturn {
   // Lookup flight information and enrich the form
   const handleFlightLookup = useCallback(async (flightApiKey?: string): Promise<FlightInfo | null> => {
     if (!form.flightNumber) {
-      alert('Please enter a flight number (e.g., UA123, BA456)');
+      alert('Please enter a flight number (e.g., UA123, BA456, LY317)');
       return null;
     }
 
@@ -192,21 +192,34 @@ export function useItineraryForm(): UseItineraryFormReturn {
       );
 
       if (flightInfo) {
+        // Build a summary of what was found
+        const foundItems: string[] = [];
+        const missingItems: string[] = [];
+        
+        if (flightInfo.airline) foundItems.push(`Airline: ${flightInfo.airline}`);
+        else missingItems.push('airline');
+        
+        if (flightInfo.departureAirportCode) foundItems.push(`From: ${flightInfo.departureAirportCode}`);
+        else missingItems.push('departure airport');
+        
+        if (flightInfo.arrivalAirportCode) foundItems.push(`To: ${flightInfo.arrivalAirportCode}`);
+        else missingItems.push('arrival airport');
+
         setForm(prev => ({
           ...prev,
           // Update airline if found
           airline: flightInfo.airline || prev.airline,
-          // Update departure info
+          // Update departure info - only if we found airport data
           location: flightInfo.departureAirportCode 
-            ? `${flightInfo.departureAirportCode} ${flightInfo.departureCity || ''}`
+            ? `${flightInfo.departureAirportCode} ${flightInfo.departureCity || ''}`.trim()
             : prev.location,
           lat: flightInfo.departureLat ? flightInfo.departureLat.toString() : prev.lat,
           lng: flightInfo.departureLng ? flightInfo.departureLng.toString() : prev.lng,
           departureAirportCode: flightInfo.departureAirportCode || prev.departureAirportCode,
           departureAirportName: flightInfo.departureAirport || prev.departureAirportName,
-          // Update arrival info
+          // Update arrival info - only if we found airport data
           arrivalLocation: flightInfo.arrivalAirportCode
-            ? `${flightInfo.arrivalAirportCode} ${flightInfo.arrivalCity || ''}`
+            ? `${flightInfo.arrivalAirportCode} ${flightInfo.arrivalCity || ''}`.trim()
             : prev.arrivalLocation,
           arrivalAirportCode: flightInfo.arrivalAirportCode || prev.arrivalAirportCode,
           arrivalAirportName: flightInfo.arrivalAirport || prev.arrivalAirportName,
@@ -219,17 +232,16 @@ export function useItineraryForm(): UseItineraryFormReturn {
           flightValidated: flightInfo.validated,
           flightValidationSource: flightInfo.validationSource,
         }));
+
+        // Show feedback about what was found/missing
+        if (missingItems.length > 0 && foundItems.length > 0) {
+          alert(`Found: ${foundItems.join(', ')}\n\nNot found: ${missingItems.join(', ')}\n\nTip: Enter airport codes (like JFK, LAX, TLV) in the departure/arrival fields, then click Lookup again.`);
+        }
+        
         return flightInfo;
       } else {
-        // Try to at least extract airline from flight number
-        const airlineCode = parseAirlineCode(form.flightNumber);
-        if (airlineCode) {
-          const airlineName = getAirlineName(airlineCode);
-          if (airlineName) {
-            setForm(prev => ({ ...prev, airline: airlineName }));
-          }
-        }
-        alert('Could not find detailed flight information. Airport codes or flight number may not be recognized. You can still enter details manually.');
+        // Could not parse flight number at all
+        alert('Could not parse flight number. Please use format like: UA123, BA456, LY317');
         return null;
       }
     } catch (error) {
