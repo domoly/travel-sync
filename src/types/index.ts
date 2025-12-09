@@ -23,11 +23,20 @@ export interface ItineraryItem {
   lng?: number;
   googleMapsLink?: string;
   placeDescription?: string;
-  // Flight Specifics
+  // Flight Specifics (basic)
   arrivalLocation?: string;
   arrivalTime?: string;
   airline?: string;
   flightNumber?: string;
+  // Flight Specifics (enriched - from lookup)
+  departureAirportCode?: string;
+  departureAirportName?: string;
+  arrivalAirportCode?: string;
+  arrivalAirportName?: string;
+  arrivalLat?: number;
+  arrivalLng?: number;
+  flightValidated?: boolean;
+  flightValidationSource?: 'database' | 'api' | 'none';
 }
 
 /**

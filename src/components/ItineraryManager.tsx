@@ -48,11 +48,13 @@ export function ItineraryManager({ tripId, trip }: ItineraryManagerProps) {
     form,
     editingItem,
     isGeocoding,
+    isLookingUpFlight,
     setField,
     resetForm,
     populateFromItem,
     handleGoogleMapsLinkChange,
     handleGeocodeLocation,
+    handleFlightLookup,
     toItemData,
     isValid,
   } = useItineraryForm();
@@ -327,6 +329,7 @@ export function ItineraryManager({ tripId, trip }: ItineraryManagerProps) {
         form={form}
         isSubmitting={isSubmitting}
         isGeocoding={isGeocoding}
+        isLookingUpFlight={isLookingUpFlight}
         isValid={isValid}
         hasGoogleMapsKey={!!GOOGLE_MAPS_API_KEY}
         onClose={closeAddModal}
@@ -334,6 +337,7 @@ export function ItineraryManager({ tripId, trip }: ItineraryManagerProps) {
         onSetField={setField}
         onGoogleMapsLinkChange={handleGoogleMapsLinkChange}
         onGeocodeLocation={handleGeocode}
+        onFlightLookup={handleFlightLookup}
       />
 
       {/* AI Generation Modal */}

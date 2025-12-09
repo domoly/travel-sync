@@ -4,7 +4,10 @@ import {
   MapPin,
   Plane,
   Check,
-  Loader2
+  Loader2,
+  Search,
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react';
 import type { ItineraryFormState } from '../hooks';
 
@@ -25,6 +28,7 @@ interface AddEditItemModalProps {
   form: ItineraryFormState;
   isSubmitting: boolean;
   isGeocoding: boolean;
+  isLookingUpFlight: boolean;
   isValid: boolean;
   hasGoogleMapsKey: boolean;
   onClose: () => void;
@@ -32,6 +36,7 @@ interface AddEditItemModalProps {
   onSetField: <K extends keyof ItineraryFormState>(field: K, value: ItineraryFormState[K]) => void;
   onGoogleMapsLinkChange: (url: string) => void;
   onGeocodeLocation: () => void;
+  onFlightLookup: () => void;
 }
 
 export const AddEditItemModal = memo(function AddEditItemModal({
@@ -40,6 +45,7 @@ export const AddEditItemModal = memo(function AddEditItemModal({
   form,
   isSubmitting,
   isGeocoding,
+  isLookingUpFlight,
   isValid,
   hasGoogleMapsKey,
   onClose,
@@ -47,10 +53,12 @@ export const AddEditItemModal = memo(function AddEditItemModal({
   onSetField,
   onGoogleMapsLinkChange,
   onGeocodeLocation,
+  onFlightLookup,
 }: AddEditItemModalProps) {
   if (!isOpen) return null;
 
   const isLodging = form.type === 'activity' && form.category === 'lodging';
+  const hasFlightData = form.flightValidated || (form.departureAirportCode && form.arrivalAirportCode);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -252,16 +260,90 @@ export const AddEditItemModal = memo(function AddEditItemModal({
         {/* Flight-specific fields */}
         {form.type === 'flight' && (
           <>
+            {/* Flight Number & Lookup */}
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-slate-500">Flight Number</label>
+                <button
+                  type="button"
+                  onClick={onFlightLookup}
+                  disabled={isLookingUpFlight || !form.flightNumber}
+                  className="text-xs text-indigo-600 hover:text-indigo-700 font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLookingUpFlight ? (
+                    <>
+                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                      Looking up...
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-3 h-3 mr-1" />
+                      Lookup Flight Info
+                    </>
+                  )}
+                </button>
+              </div>
+              <input
+                type="text"
+                className="w-full p-2 border border-slate-300 rounded-lg text-sm"
+                placeholder="e.g., UA123, BA456, DL789"
+                value={form.flightNumber}
+                onChange={(e) => onSetField('flightNumber', e.target.value.toUpperCase())}
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                Enter flight number to auto-fill airline and airport details
+              </p>
+            </div>
+
+            {/* Validation Status */}
+            {form.flightNumber && (
+              <div className={`mb-3 p-2 rounded-lg text-xs flex items-center ${
+                form.flightValidated 
+                  ? 'bg-green-50 text-green-700 border border-green-200' 
+                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+              }`}>
+                {form.flightValidated ? (
+                  <>
+                    <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
+                    Flight validated ({form.flightValidationSource === 'api' ? 'live data' : 'database'})
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="w-3.5 h-3.5 mr-1.5" />
+                    Flight not validated - enter details manually or use lookup
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Airline (auto-filled or manual) */}
+            <div className="mb-3">
+              <label className="text-xs text-slate-500 mb-1 block">Airline</label>
+              <input
+                type="text"
+                className="w-full p-2 border border-slate-300 rounded-lg text-sm"
+                placeholder="e.g., United Airlines"
+                value={form.airline}
+                onChange={(e) => onSetField('airline', e.target.value)}
+              />
+            </div>
+
+            {/* Arrival Location & Time */}
             <div className="grid grid-cols-2 gap-3 mb-3">
               <div>
                 <label className="text-xs text-slate-500 mb-1 block">Arrival Airport/City</label>
                 <input
                   type="text"
                   className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-                  placeholder="e.g., LAX Los Angeles"
+                  placeholder="e.g., LAX or Los Angeles"
                   value={form.arrivalLocation}
                   onChange={(e) => onSetField('arrivalLocation', e.target.value)}
                 />
+                {form.arrivalAirportCode && (
+                  <p className="text-xs text-green-600 mt-1 flex items-center">
+                    <Check className="w-3 h-3 mr-1" /> {form.arrivalAirportCode} - {form.arrivalAirportName}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="text-xs text-slate-500 mb-1 block">Arrival Time</label>
@@ -273,28 +355,37 @@ export const AddEditItemModal = memo(function AddEditItemModal({
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <div>
-                <label className="text-xs text-slate-500 mb-1 block">Airline</label>
-                <input
-                  type="text"
-                  className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-                  placeholder="e.g., Delta"
-                  value={form.airline}
-                  onChange={(e) => onSetField('airline', e.target.value)}
-                />
+
+            {/* Airport Codes Summary */}
+            {hasFlightData && (
+              <div className="mb-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-center justify-between text-sm">
+                  <div className="text-center">
+                    <p className="font-bold text-blue-800">{form.departureAirportCode || '???'}</p>
+                    <p className="text-xs text-blue-600">{form.departureAirportName || form.location}</p>
+                  </div>
+                  <div className="flex-1 px-4">
+                    <div className="flex items-center justify-center">
+                      <div className="h-px bg-blue-300 flex-1" />
+                      <Plane className="w-4 h-4 mx-2 text-blue-500" />
+                      <div className="h-px bg-blue-300 flex-1" />
+                    </div>
+                    {form.airline && (
+                      <p className="text-xs text-blue-500 text-center mt-1">{form.airline}</p>
+                    )}
+                  </div>
+                  <div className="text-center">
+                    <p className="font-bold text-blue-800">{form.arrivalAirportCode || '???'}</p>
+                    <p className="text-xs text-blue-600">{form.arrivalAirportName || form.arrivalLocation}</p>
+                  </div>
+                </div>
+                {form.lat && form.arrivalLat && (
+                  <p className="text-xs text-green-600 mt-2 text-center flex items-center justify-center">
+                    <MapPin className="w-3 h-3 mr-1" /> Both airports will appear on map
+                  </p>
+                )}
               </div>
-              <div>
-                <label className="text-xs text-slate-500 mb-1 block">Flight Number</label>
-                <input
-                  type="text"
-                  className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-                  placeholder="e.g., DL123"
-                  value={form.flightNumber}
-                  onChange={(e) => onSetField('flightNumber', e.target.value)}
-                />
-              </div>
-            </div>
+            )}
           </>
         )}
 

@@ -127,27 +127,60 @@ export function ItineraryMapView({
     return items.filter((item) => item.day === selectedDay);
   }, [items, selectedDay]);
 
-  // Items with coordinates
+  // Items with coordinates (departure locations)
   const mappableItems = useMemo(() => {
     return filteredItems.filter((item) => item.lat && item.lng);
   }, [filteredItems]);
 
-  // Calculate map center based on markers
-  const mapCenter = useMemo(() => {
-    if (mappableItems.length === 0) return defaultCenter;
+  // Flight routes (items that have both departure and arrival coordinates)
+  const flightRoutes = useMemo(() => {
+    return filteredItems
+      .filter((item) => 
+        item.type === 'flight' && 
+        item.lat && item.lng && 
+        item.arrivalLat && item.arrivalLng
+      )
+      .map((item) => ({
+        item,
+        departure: { lat: item.lat!, lng: item.lng! },
+        arrival: { lat: item.arrivalLat!, lng: item.arrivalLng! },
+      }));
+  }, [filteredItems]);
+
+  // All points to consider for bounds (including flight arrivals)
+  const allMapPoints = useMemo(() => {
+    const points: Array<{ lat: number; lng: number }> = [];
     
-    const lats = mappableItems.map((item) => item.lat!);
-    const lngs = mappableItems.map((item) => item.lng!);
+    // Add departure locations
+    mappableItems.forEach((item) => {
+      points.push({ lat: item.lat!, lng: item.lng! });
+    });
+    
+    // Add flight arrival locations
+    flightRoutes.forEach((route) => {
+      points.push(route.arrival);
+    });
+    
+    return points;
+  }, [mappableItems, flightRoutes]);
+
+  // Calculate map center based on all markers
+  const mapCenter = useMemo(() => {
+    if (allMapPoints.length === 0) return defaultCenter;
+    
+    const lats = allMapPoints.map((p) => p.lat);
+    const lngs = allMapPoints.map((p) => p.lng);
     
     return {
       lat: lats.reduce((a, b) => a + b, 0) / lats.length,
       lng: lngs.reduce((a, b) => a + b, 0) / lngs.length,
     };
-  }, [mappableItems]);
+  }, [allMapPoints]);
 
-  // Path for polyline
+  // Path for polyline (non-flight items only)
   const path = useMemo(() => {
     return mappableItems
+      .filter((item) => item.type !== 'flight') // Exclude flights from the regular path
       .sort((a, b) => {
         if (a.day !== b.day) return a.day.localeCompare(b.day);
         return a.time.localeCompare(b.time);
@@ -157,14 +190,14 @@ export function ItineraryMapView({
 
   // Fit bounds when items change
   useEffect(() => {
-    if (map && mappableItems.length > 0) {
+    if (map && allMapPoints.length > 0) {
       const bounds = new google.maps.LatLngBounds();
-      mappableItems.forEach((item) => {
-        bounds.extend({ lat: item.lat!, lng: item.lng! });
+      allMapPoints.forEach((point) => {
+        bounds.extend(point);
       });
       map.fitBounds(bounds, { top: 50, right: 50, bottom: 120, left: 50 });
     }
-  }, [map, mappableItems]);
+  }, [map, allMapPoints]);
 
   const onLoad = useCallback((map: google.maps.Map) => {
     setMap(map);
@@ -258,7 +291,7 @@ export function ItineraryMapView({
           onUnmount={onUnmount}
           options={mapOptions}
         >
-          {/* Polyline connecting locations */}
+          {/* Polyline connecting non-flight locations */}
           {path.length > 1 && (
             <Polyline
               path={path}
@@ -271,7 +304,30 @@ export function ItineraryMapView({
             />
           )}
 
-          {/* Markers */}
+          {/* Flight route polylines (dashed arc lines) */}
+          {flightRoutes.map((route) => (
+            <Polyline
+              key={`flight-route-${route.item.id}`}
+              path={[route.departure, route.arrival]}
+              options={{
+                strokeColor: CATEGORY_COLORS.flight,
+                strokeOpacity: 0.8,
+                strokeWeight: 2,
+                geodesic: true,
+                icons: [{
+                  icon: {
+                    path: 'M 0,-1 0,1',
+                    strokeOpacity: 1,
+                    scale: 3,
+                  },
+                  offset: '0',
+                  repeat: '15px',
+                }],
+              }}
+            />
+          ))}
+
+          {/* Markers for departure locations */}
           {mappableItems.map((item, index) => (
             <Marker
               key={item.id}
@@ -284,6 +340,30 @@ export function ItineraryMapView({
                 fontWeight: 'bold',
               }}
               onClick={() => setSelectedItem(item)}
+            />
+          ))}
+
+          {/* Markers for flight arrival airports */}
+          {flightRoutes.map((route) => (
+            <Marker
+              key={`arrival-${route.item.id}`}
+              position={route.arrival}
+              icon={{
+                path: google.maps.SymbolPath.CIRCLE,
+                fillColor: CATEGORY_COLORS.flight,
+                fillOpacity: 1,
+                strokeColor: '#ffffff',
+                strokeWeight: 2,
+                scale: 10,
+              }}
+              label={{
+                text: route.item.arrivalAirportCode || '✈',
+                color: '#ffffff',
+                fontSize: '8px',
+                fontWeight: 'bold',
+              }}
+              title={`${route.item.arrivalAirportName || route.item.arrivalLocation} (Arrival)`}
+              onClick={() => setSelectedItem(route.item)}
             />
           ))}
 
