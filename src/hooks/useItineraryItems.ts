@@ -157,29 +157,50 @@ export function useItineraryItems(tripId: string): UseItineraryItemsReturn {
     
     // Sort items within each day:
     // 1. Check-out items first (you're leaving from here in the morning)
-    // 2. Then by time
-    // 3. Staying items at the end (context for where you're sleeping)
-    // 4. Check-in items near the end (typically evening arrival)
+    // 2. Check-in items at top (your base for the day), BUT flights landing before check-in come first
+    // 3. Regular activities sorted by time
+    // 4. Staying items at the end (context for where you're sleeping)
     for (const day of Object.keys(grouped)) {
+      const dayItems = grouped[day];
+      
+      // Find check-in item and its time (if any)
+      const checkInItem = dayItems.find(item => item.lodgingPhase === 'check-in');
+      const checkInTime = checkInItem?.time || '23:59'; // Default to end of day if no time
+      
       grouped[day].sort((a, b) => {
-        // Priority order: check-out (0) -> regular/no phase (1) -> staying (2) -> check-in (3)
-        const phaseOrder = (phase?: LodgingPhase) => {
-          if (phase === 'check-out') return 0;
-          if (!phase) return 1;
-          if (phase === 'staying') return 2;
-          if (phase === 'check-in') return 3;
-          return 1;
+        // Helper to determine sort priority
+        const getSortPriority = (item: DisplayItineraryItem): number => {
+          // Check-out always first (0)
+          if (item.lodgingPhase === 'check-out') return 0;
+          
+          // Flights landing BEFORE check-in time come next (1)
+          // Use arrivalTime for flights if available, otherwise use time
+          const isFlight = item.type === 'flight';
+          const flightLandingTime = item.arrivalTime || item.time;
+          if (isFlight && flightLandingTime < checkInTime) return 1;
+          
+          // Check-in comes after early flights (2)
+          if (item.lodgingPhase === 'check-in') return 2;
+          
+          // Staying at the very end (4)
+          if (item.lodgingPhase === 'staying') return 4;
+          
+          // Regular activities in the middle (3)
+          return 3;
         };
         
-        const aPhase = phaseOrder(a.lodgingPhase);
-        const bPhase = phaseOrder(b.lodgingPhase);
+        const aPriority = getSortPriority(a);
+        const bPriority = getSortPriority(b);
         
-        // If same phase category, sort by time
-        if (aPhase === bPhase) {
-          return a.time.localeCompare(b.time);
+        // If same priority, sort by time
+        if (aPriority === bPriority) {
+          // For flights, use arrival time for sorting
+          const aTime = a.type === 'flight' ? (a.arrivalTime || a.time) : a.time;
+          const bTime = b.type === 'flight' ? (b.arrivalTime || b.time) : b.time;
+          return aTime.localeCompare(bTime);
         }
         
-        return aPhase - bPhase;
+        return aPriority - bPriority;
       });
     }
     
