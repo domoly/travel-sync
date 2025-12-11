@@ -198,10 +198,15 @@ export const AddEditItemModal = memo(function AddEditItemModal({
               <input
                 type="url"
                 className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-                placeholder="https://maps.google.com/... (coordinates will be auto-extracted)"
+                placeholder="https://maps.google.com/..."
                 value={form.googleMapsLink}
                 onChange={(e) => onGoogleMapsLinkChange(e.target.value)}
               />
+              {form.googleMapsLink && (
+                <p className="text-xs text-green-600 mt-1">
+                  📍 Coordinates will be auto-extracted from the link
+                </p>
+              )}
             </div>
 
             {/* Coordinates */}

@@ -26,6 +26,9 @@ import {
 
 import type { ItineraryItem } from '../types';
 
+// Define libraries outside component to prevent reloading
+const MAPS_LIBRARIES: ("places")[] = ["places"];
+
 interface ItineraryMapViewProps {
   items: ItineraryItem[];
   tripStartDate?: string;
@@ -99,6 +102,7 @@ export function ItineraryMapView({
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey,
     id: 'google-map-script',
+    libraries: MAPS_LIBRARIES,
   });
 
   // Get unique days from items

@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { useJsApiLoader } from '@react-google-maps/api';
 import {
   Plus,
   MapPin,
@@ -11,14 +12,19 @@ import {
 import type { Trip, ItineraryItem } from '../types';
 import { useItineraryItems, useItineraryForm } from '../hooks';
 import { geocodeAddress } from '../services/geocoding';
+import { enrichItemWithPlaceDetails, formatPlaceDetailsForStorage } from '../services/places';
 
 import { ItineraryItemCard } from './ItineraryItemCard';
 import { ItineraryMapView } from './ItineraryMapView';
 import { AddEditItemModal } from './AddEditItemModal';
 import { AIGenerationModal } from './AIGenerationModal';
+import { ItemDetailModal } from './ItemDetailModal';
 
 // Google Maps API Key
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+
+// Libraries to load - defined outside component to prevent reloading
+const GOOGLE_MAPS_LIBRARIES: ("places")[] = ["places"];
 
 interface ItineraryManagerProps {
   tripId: string;
@@ -30,6 +36,20 @@ interface ItineraryManagerProps {
  * Uses custom hooks for state management and extracted components for UI.
  */
 export function ItineraryManager({ tripId, trip }: ItineraryManagerProps) {
+  // Load Google Maps API with Places library immediately on page load
+  const { isLoaded: isMapsApiLoaded } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    id: 'google-map-script',
+    libraries: GOOGLE_MAPS_LIBRARIES,
+  });
+
+  // Log when Maps API is ready (for debugging)
+  useEffect(() => {
+    if (isMapsApiLoaded) {
+      console.log('✅ Google Maps API with Places loaded');
+    }
+  }, [isMapsApiLoaded]);
+
   // Use custom hooks for data and form management
   const {
     items,
@@ -62,6 +82,8 @@ export function ItineraryManager({ tripId, trip }: ItineraryManagerProps) {
   // UI state
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAIModal, setShowAIModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<ItineraryItem | null>(null);
   const [aiDestination, setAiDestination] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
@@ -91,13 +113,63 @@ export function ItineraryManager({ tripId, trip }: ItineraryManagerProps) {
     resetForm();
   }, [resetForm]);
 
-  // Submit form (add or update)
+  // Open detail view for an item
+  const openDetailModal = useCallback((item: ItineraryItem) => {
+    setSelectedItem(item);
+    setShowDetailModal(true);
+  }, []);
+
+  // Close detail modal
+  const closeDetailModal = useCallback(() => {
+    setShowDetailModal(false);
+    setSelectedItem(null);
+  }, []);
+
+  // Transition from detail view to edit
+  const editFromDetail = useCallback((item: ItineraryItem) => {
+    closeDetailModal();
+    openEditModal(item);
+  }, [closeDetailModal, openEditModal]);
+
+  // Submit form (add or update) with place enrichment
   const handleSubmit = useCallback(async () => {
     if (!isValid) return;
 
     setIsSubmitting(true);
     try {
       const itemData = toItemData();
+      
+      // Try to enrich with place details if we have a Google Maps link
+      if (GOOGLE_MAPS_API_KEY && itemData.googleMapsLink && itemData.type !== 'flight') {
+        console.log('🔍 Starting place enrichment for:', itemData.googleMapsLink);
+        try {
+          const placeDetails = await enrichItemWithPlaceDetails(
+            itemData.googleMapsLink,
+            itemData.location || '',
+            GOOGLE_MAPS_API_KEY,
+            itemData.lat && itemData.lng ? { lat: itemData.lat, lng: itemData.lng } : undefined
+          );
+          
+          if (placeDetails) {
+            console.log('✅ Place enrichment successful:', placeDetails);
+            // Store enriched data
+            itemData.placeDescription = formatPlaceDetailsForStorage(placeDetails);
+            
+            // Update coordinates if we got them from Places API and don't have them yet
+            if (!itemData.lat && placeDetails.lat) {
+              itemData.lat = placeDetails.lat;
+            }
+            if (!itemData.lng && placeDetails.lng) {
+              itemData.lng = placeDetails.lng;
+            }
+          } else {
+            console.log('ℹ️ No place details found');
+          }
+        } catch (placeError) {
+          console.error('❌ Place enrichment error:', placeError);
+          // Continue without enrichment - not a critical error
+        }
+      }
       
       if (editingItem) {
         await updateItem(editingItem.id, itemData);
@@ -307,12 +379,13 @@ export function ItineraryManager({ tripId, trip }: ItineraryManagerProps) {
               <div className="space-y-2">
                 {itemsByDay[day].map((item) => (
                   <ItineraryItemCard
-                    key={item.id}
+                    key={`${item.id}-${item.displayDay}`}
                     item={item}
                     onToggleComplete={toggleComplete}
                     onEdit={openEditModal}
                     onDelete={handleDelete}
                     onGenerateAI={openAIModal}
+                    onViewDetails={openDetailModal}
                     formatDate={formatDate}
                   />
                 ))}
@@ -348,6 +421,15 @@ export function ItineraryManager({ tripId, trip }: ItineraryManagerProps) {
         initialDestination={aiDestination}
         onClose={closeAIModal}
         onAddItems={handleAddAIItems}
+        formatDate={formatDate}
+      />
+
+      {/* Item Detail Modal */}
+      <ItemDetailModal
+        item={selectedItem}
+        isOpen={showDetailModal}
+        onClose={closeDetailModal}
+        onEdit={editFromDetail}
         formatDate={formatDate}
       />
     </div>
