@@ -42,7 +42,7 @@ export function TripCard({ trip, isOwner, onClick, onDelete, onExport }: TripCar
           {onExport && (
             <button
               onClick={handleExport}
-              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors md:opacity-0 md:group-hover:opacity-100"
               title="Export trip backup"
             >
               <Download className="w-4 h-4" />
@@ -51,7 +51,7 @@ export function TripCard({ trip, isOwner, onClick, onDelete, onExport }: TripCar
           {isOwner && onDelete && (
             <button
               onClick={handleDelete}
-              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors md:opacity-0 md:group-hover:opacity-100"
               title="Delete trip"
             >
               <Trash2 className="w-4 h-4" />
