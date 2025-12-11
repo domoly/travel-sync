@@ -30,7 +30,6 @@ interface ItineraryMapViewProps {
   items: ItineraryItem[];
   tripStartDate?: string;
   tripEndDate?: string;
-  onToggleComplete: (item: ItineraryItem) => void;
   onEdit: (item: ItineraryItem) => void;
   onGeocodeItems?: (items: ItineraryItem[]) => Promise<void>;
   isGeocoding?: boolean;
@@ -86,7 +85,6 @@ export function ItineraryMapView({
   items,
   tripStartDate,
   tripEndDate,
-  onToggleComplete,
   onEdit,
   onGeocodeItems,
   isGeocoding = false,

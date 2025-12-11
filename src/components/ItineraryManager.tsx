@@ -342,7 +342,6 @@ export const ItineraryManager = forwardRef<ItineraryManagerHandle, ItineraryMana
               items={items}
               tripStartDate={trip.startDate}
               tripEndDate={trip.endDate}
-              onToggleComplete={toggleComplete}
               onEdit={openEditModal}
               onGeocodeItems={handleBatchGeocode}
               isGeocoding={isBatchGeocoding}
