@@ -1,16 +1,14 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { useJsApiLoader } from '@react-google-maps/api';
 import {
-  Plus,
   MapPin,
-  Sparkles,
   List,
   Map as MapIcon,
   Loader2
 } from 'lucide-react';
 
 import type { Trip, ItineraryItem } from '../types';
-import { useItineraryItems, useItineraryForm } from '../hooks';
+import { useItineraryItems, useItineraryForm, usePlaceEnrichment } from '../hooks';
 import { geocodeAddress } from '../services/geocoding';
 import { enrichItemWithPlaceDetails, formatPlaceDetailsForStorage } from '../services/places';
 
@@ -18,7 +16,7 @@ import { ItineraryItemCard } from './ItineraryItemCard';
 import { ItineraryMapView } from './ItineraryMapView';
 import { AddEditItemModal } from './AddEditItemModal';
 import { AIGenerationModal } from './AIGenerationModal';
-import { ItemDetailModal } from './ItemDetailModal';
+import { ItemDetailPanel } from './ItemDetailPanel';
 
 // Google Maps API Key
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
@@ -31,11 +29,17 @@ interface ItineraryManagerProps {
   trip: Trip;
 }
 
+// Methods exposed to parent via ref
+export interface ItineraryManagerHandle {
+  openAddModal: () => void;
+  openAIModal: () => void;
+}
+
 /**
  * Refactored ItineraryManager - now ~300 lines instead of 1140!
  * Uses custom hooks for state management and extracted components for UI.
  */
-export function ItineraryManager({ tripId, trip }: ItineraryManagerProps) {
+export const ItineraryManager = forwardRef<ItineraryManagerHandle, ItineraryManagerProps>(function ItineraryManager({ tripId, trip }, ref) {
   // Load Google Maps API with Places library immediately on page load
   const { isLoaded: isMapsApiLoaded } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
@@ -63,6 +67,14 @@ export function ItineraryManager({ tripId, trip }: ItineraryManagerProps) {
     addItemsBatch,
     updateItemsBatch,
   } = useItineraryItems(tripId);
+
+  // Automatically enrich items with Google Places data
+  usePlaceEnrichment({
+    items,
+    apiKey: GOOGLE_MAPS_API_KEY,
+    onUpdateItem: updateItem,
+    enabled: isMapsApiLoaded && !!GOOGLE_MAPS_API_KEY,
+  });
 
   const {
     form,
@@ -152,8 +164,9 @@ export function ItineraryManager({ tripId, trip }: ItineraryManagerProps) {
           
           if (placeDetails) {
             console.log('✅ Place enrichment successful:', placeDetails);
-            // Store enriched data
+            // Store enriched data with timestamp
             itemData.placeDescription = formatPlaceDetailsForStorage(placeDetails);
+            itemData.placeDataFetchedAt = Date.now();
             
             // Update coordinates if we got them from Places API and don't have them yet
             if (!itemData.lat && placeDetails.lat) {
@@ -164,6 +177,8 @@ export function ItineraryManager({ tripId, trip }: ItineraryManagerProps) {
             }
           } else {
             console.log('ℹ️ No place details found');
+            // Mark as attempted so we don't keep retrying
+            itemData.placeDataFetchedAt = Date.now();
           }
         } catch (placeError) {
           console.error('❌ Place enrichment error:', placeError);
@@ -200,6 +215,12 @@ export function ItineraryManager({ tripId, trip }: ItineraryManagerProps) {
     setAiDestination(destination || '');
     setShowAIModal(true);
   }, []);
+
+  // Expose methods to parent via ref
+  useImperativeHandle(ref, () => ({
+    openAddModal,
+    openAIModal: () => openAIModal(),
+  }), [openAddModal, openAIModal]);
 
   // Close AI modal
   const closeAIModal = useCallback(() => {
@@ -311,20 +332,6 @@ export function ItineraryManager({ tripId, trip }: ItineraryManagerProps) {
             </button>
           </div>
         </div>
-        <div className="flex space-x-2">
-          <button
-            onClick={() => openAIModal()}
-            className="flex items-center px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 text-sm font-medium transition-all shadow-sm"
-          >
-            <Sparkles className="w-4 h-4 mr-1" /> Generate with AI
-          </button>
-          <button
-            onClick={openAddModal}
-            className="flex items-center px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium transition-colors"
-          >
-            <Plus className="w-4 h-4 mr-1" /> Add Item
-          </button>
-        </div>
       </div>
 
       {/* Map View */}
@@ -336,6 +343,7 @@ export function ItineraryManager({ tripId, trip }: ItineraryManagerProps) {
               tripStartDate={trip.startDate}
               tripEndDate={trip.endDate}
               onToggleComplete={toggleComplete}
+              onEdit={openEditModal}
               onGeocodeItems={handleBatchGeocode}
               isGeocoding={isBatchGeocoding}
               googleMapsApiKey={GOOGLE_MAPS_API_KEY}
@@ -424,14 +432,15 @@ export function ItineraryManager({ tripId, trip }: ItineraryManagerProps) {
         formatDate={formatDate}
       />
 
-      {/* Item Detail Modal */}
-      <ItemDetailModal
+      {/* Item Detail Panel */}
+      <ItemDetailPanel
         item={selectedItem}
         isOpen={showDetailModal}
         onClose={closeDetailModal}
         onEdit={editFromDetail}
+        onDelete={handleDelete}
         formatDate={formatDate}
       />
     </div>
   );
-}
+});

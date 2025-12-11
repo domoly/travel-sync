@@ -17,7 +17,7 @@ import {
 } from './config/firebase';
 
 // App version - update this with each deployment
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 
 // Wrapper component for Dashboard with navigation
 function DashboardRoute({ user }: { user: User }) {

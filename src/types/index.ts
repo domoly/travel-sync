@@ -23,6 +23,7 @@ export interface ItineraryItem {
   lng?: number;
   googleMapsLink?: string;
   placeDescription?: string;
+  placeDataFetchedAt?: number; // Unix timestamp of when Google Places data was last fetched
   // Flight Specifics (basic)
   arrivalLocation?: string;
   arrivalTime?: string;

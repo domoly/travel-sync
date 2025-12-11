@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plane, Plus, Upload, AlertTriangle } from 'lucide-react';
+import { Plane, Plus, Upload, AlertTriangle, Users } from 'lucide-react';
 import type { User } from 'firebase/auth';
 
 import type { Trip } from '../types';
 import { TripCard } from '../components/TripCard';
+import { MobileActionMenu, type MenuAction } from '../components/MobileActionMenu';
 import {
   db,
   appId,
@@ -265,34 +266,37 @@ export function Dashboard({ user, onOpenTrip }: DashboardProps) {
           </div>
           <h1 className="text-2xl font-bold text-slate-800">TravelSync</h1>
         </div>
-        <div className="flex space-x-2">
-          <input
-            type="file"
-            ref={fileInputRef}
-            className="hidden"
-            accept=".json"
-            onChange={handleFileImport}
-          />
-          <button
-            onClick={handleImportClick}
-            className="px-4 py-2 text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 font-medium text-sm transition-colors flex items-center"
-            title="Import from Backup"
-          >
-            <Upload className="w-4 h-4 mr-2" /> Import
-          </button>
-          <button
-            onClick={() => setShowJoinModal(true)}
-            className="px-4 py-2 text-indigo-600 bg-white border border-indigo-100 rounded-lg hover:bg-indigo-50 font-medium text-sm transition-colors"
-          >
-            Join Trip
-          </button>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium text-sm shadow-sm transition-colors flex items-center"
-          >
-            <Plus className="w-4 h-4 mr-1" /> New Trip
-          </button>
-        </div>
+        
+        {/* Hidden file input for import */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          className="hidden"
+          accept=".json"
+          onChange={handleFileImport}
+        />
+        
+        {/* Action menu */}
+        <MobileActionMenu
+          actions={[
+            {
+              label: 'New Trip',
+              icon: <Plus className="w-4 h-4" />,
+              onClick: () => setShowCreateModal(true),
+              variant: 'primary',
+            },
+            {
+              label: 'Join Trip',
+              icon: <Users className="w-4 h-4" />,
+              onClick: () => setShowJoinModal(true),
+            },
+            {
+              label: 'Import Backup',
+              icon: <Upload className="w-4 h-4" />,
+              onClick: handleImportClick,
+            },
+          ] as MenuAction[]}
+        />
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -450,7 +454,7 @@ export function Dashboard({ user, onOpenTrip }: DashboardProps) {
               Are you sure you want to delete <strong>"{tripToDelete.name}"</strong>?
             </p>
             <p className="text-sm text-slate-500 mb-6">
-              This will permanently delete the trip and all its itinerary items, expenses, and tasks. 
+              This will permanently delete the trip and all its itinerary items and tasks. 
               This action cannot be undone.
             </p>
 
